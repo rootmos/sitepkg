@@ -170,12 +170,18 @@ func main() {
 	}
 	logger.Info("chroot", "path", root)
 
+	var m *manifest.Manifest
 	if *manifestFlag == "" {
-		log.Fatal("manifest not specified")
+		m = &manifest.Manifest{}
+	} else {
+		m, err = manifest.Load(ctx, *manifestFlag, root)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	m, err := manifest.Load(ctx, *manifestFlag, root)
-	if err != nil {
-		log.Fatal(err)
+
+	for _, p := range flag.Args() {
+		m.Add(p)
 	}
 
 	const (

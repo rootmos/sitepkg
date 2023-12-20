@@ -7,6 +7,7 @@ import (
 	"io"
 	"archive/tar"
 	"context"
+	"fmt"
 
 	"rootmos.io/sitepkg/internal/logging"
 )
@@ -35,6 +36,12 @@ func (m *Manifest) Has(path string) bool {
 		}
 	}
 	return false
+}
+
+func (m *Manifest) Add(path string) {
+	if !m.Has(path) {
+		m.Paths = append(m.Paths, path)
+	}
 }
 
 func Load(ctx context.Context, path, root string) (m *Manifest, err error) {
@@ -113,7 +120,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 	return
 }
 
-func (m *Manifest) Extract(ctx context.Context, r io.Reader) (err error) {
+func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 	logger := logging.Get(ctx)
 	tr := tar.NewReader(r)
 
@@ -141,15 +148,15 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) (err error) {
 		return
 	}
 
+	extracted := make(map[string]bool)
+
 	for {
-		var hdr *tar.Header
-		hdr, err = tr.Next()
+		hdr, err := tr.Next()
 		if err == io.EOF {
-			err = nil
 			break
 		}
 		if err != nil {
-			return
+			return err
 		}
 
 		if !m.Has(hdr.Name) {
@@ -157,10 +164,18 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) (err error) {
 			continue
 		}
 
-		if err = extract(hdr); err != nil {
-			return
+		if err := extract(hdr); err != nil {
+			return err
+		}
+
+		extracted[hdr.Name] = true
+	}
+
+	for _, p := range m.Paths {
+		if !extracted[p] {
+			return fmt.Errorf("not found in tarball: %s", p)
 		}
 	}
 
-	return
+	return nil
 }
