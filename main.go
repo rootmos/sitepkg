@@ -28,7 +28,9 @@ func S3(ctx context.Context) (*s3.Client, error) {
 		return s3Client, nil
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithEC2IMDSRegion(),
+	)
 	if err != nil {
 		return nil, err
 	}
