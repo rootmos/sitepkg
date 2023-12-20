@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"log/slog"
 	"flag"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"context"
 
 	"rootmos.io/sitepkg/internal/common"
+	"rootmos.io/sitepkg/internal/logging"
 )
 
 type Manifest struct {
@@ -19,9 +19,7 @@ type Manifest struct {
 }
 
 func Load(ctx context.Context, path string) (m *Manifest, err error) {
-	logger, ctx := withLogger(ctx, func(l *slog.Logger) *slog.Logger {
-		return l.With("manifest", path)
-	})
+	logger, ctx := logging.WithAttrs(ctx, "manifest", path)
 
 	f, err := os.Open(path)
 	defer f.Close()
@@ -42,7 +40,7 @@ func Load(ctx context.Context, path string) (m *Manifest, err error) {
 }
 
 func (m *Manifest) CreateTarball(ctx context.Context, w io.Writer) (err error) {
-	logger := getLogger(ctx)
+	logger := logging.Get(ctx)
 
 	t := tar.NewWriter(w)
 	defer func() {
@@ -56,39 +54,6 @@ func (m *Manifest) CreateTarball(ctx context.Context, w io.Writer) (err error) {
 	return
 }
 
-var (
-	logLevelFlag = flag.String("log", common.Getenv("LOG_LEVEL"), "set logging level")
-)
-
-func setupDefaultLogger() (*slog.Logger, error) {
-	level := slog.LevelInfo
-	if *logLevelFlag != "" {
-		err := level.UnmarshalText([]byte(*logLevelFlag))
-		if err != nil {
-			return nil, err
-		}
-	}
-	opts := slog.HandlerOptions{ Level: level }
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &opts))
-	slog.SetDefault(logger)
-	return logger, nil
-}
-
-func setLogger(ctx context.Context, logger *slog.Logger) context.Context {
-	return context.WithValue(ctx, "logger", logger)
-}
-
-func getLogger(ctx context.Context) *slog.Logger {
-	return ctx.Value("logger").(*slog.Logger)
-}
-
-func withLogger(ctx context.Context, fs ...func(*slog.Logger) *slog.Logger) (*slog.Logger, context.Context) {
-	logger := getLogger(ctx)
-	for _, f := range fs {
-		logger = f(logger)
-	}
-	return logger, setLogger(ctx, logger)
-}
 
 func main() {
 	chrootFlag := flag.String("chroot", common.Getenv("CHROOT"), "act relative directory")
@@ -96,13 +61,13 @@ func main() {
 	outputFlag := flag.String("output", common.Getenv("OUTPUT"), "write tarball to path")
 	flag.Parse()
 
-	logger, err := setupDefaultLogger()
+	logger, err := logging.SetupDefaultLogger()
 	if err != nil {
 		log.Fatal(err)
 	}
 	logger.Debug("hello")
 
-	ctx := setLogger(context.Background(), logger)
+	ctx := logging.Set(context.Background(), logger)
 
 	root := *chrootFlag
 	if root == "" {
@@ -137,10 +102,7 @@ func main() {
 	}
 	defer f.Close()
 
-	_, ctx = withLogger(ctx, func(l *slog.Logger) *slog.Logger {
-		return l.With("tarball", output)
-	})
-
+	_, ctx = logging.WithAttrs(ctx, "tarball", output)
 	err = m.CreateTarball(ctx, f)
 	if err != nil {
 		log.Fatal(err)
