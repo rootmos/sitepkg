@@ -6,11 +6,140 @@ import (
 	"os"
 	"path/filepath"
 	"context"
+	"io"
+	"net/url"
+	"bytes"
+	"strings"
+	"fmt"
 
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
 	"rootmos.io/sitepkg/internal/manifest"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+var s3Client *s3.Client
+
+func S3(ctx context.Context) (*s3.Client, error) {
+	if s3Client != nil {
+		return s3Client, nil
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	s3Client = s3.NewFromConfig(cfg)
+	return s3Client, nil
+}
+
+func bucketKeyFromUrl(u *url.URL) (bucket, key string) {
+	bucket = u.Host
+	key = strings.TrimLeft(u.Path, "/")
+	return
+}
+
+func Create(ctx context.Context, rawUrl string, r io.Reader) error {
+	logger := logging.Get(ctx)
+
+	u, err := url.Parse(rawUrl)
+	if err != nil {
+		return err
+	}
+
+	switch u.Scheme {
+	case "s3":
+		s3c, err := S3(ctx)
+		if err != nil {
+			return err
+		}
+
+		bucket, key := bucketKeyFromUrl(u)
+		logger, ctx = logging.WithAttrs(ctx, "bucket", bucket, "key", key)
+
+		logger.Debug("put object")
+		o, err := s3c.PutObject(ctx, &s3.PutObjectInput {
+			Bucket: aws.String(bucket),
+			Key: aws.String(key),
+			Body: r,
+		})
+		if err == nil {
+			logger.Debug("put object successful", "VersionId", aws.ToString(o.VersionId))
+		}
+		return err
+	case "": fallthrough
+	case "file":
+		path := filepath.Join(u.Host, u.Path)
+
+		logger, _ = logging.WithAttrs(ctx, "path", path)
+
+		logger.Debug("create")
+		f, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		n, err := io.Copy(f, r)
+		if err != nil {
+			return err
+		}
+		if err == nil {
+			logger.Debug("wrote", "bytes", n)
+		}
+		return err
+	default:
+		return fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
+	}
+}
+
+func Open(ctx context.Context, rawUrl string) (io.ReadCloser, error) {
+	logger := logging.Get(ctx)
+
+	u, err := url.Parse(rawUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	switch u.Scheme {
+	case "s3":
+		s3c, err := S3(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		bucket, key := bucketKeyFromUrl(u)
+		logger, ctx = logging.WithAttrs(ctx, "bucket", bucket, "key", key)
+
+		logger.Debug("get object")
+		o, err := s3c.GetObject(ctx, &s3.GetObjectInput {
+			Bucket: aws.String(bucket),
+			Key: aws.String(key),
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		logger.Debug("get object successful", "VersionId", aws.ToString(o.VersionId))
+
+		return o.Body, nil
+	case "": fallthrough
+	case "file":
+		path := filepath.Join(u.Host, u.Path)
+
+		logger, _ = logging.WithAttrs(ctx, "path", path)
+
+		logger.Debug("open")
+		return os.Open(path)
+	default:
+		return nil, fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
+	}
+}
 
 func main() {
 	chrootFlag := flag.String("chroot", common.Getenv("CHROOT"), "act relative directory")
@@ -50,45 +179,43 @@ func main() {
 	}
 
 	const (
-		Noop = iota
-		Create
-		Extract
+		ActionNoop = iota
+		ActionCreate
+		ActionExtract
 	)
-	action := Noop
+	action := ActionNoop
 
 	var tarball string
 	if *createFlag != "" {
-		if action != Noop {
+		if action != ActionNoop {
 			log.Fatal("more than one action specified")
 		}
-		action = Create
+		action = ActionCreate
 		tarball = *createFlag
 	}
 	if *extractFlag != "" {
-		if action != Noop {
+		if action != ActionNoop {
 			log.Fatal("more than one action specified")
 		}
-		action = Extract
+		action = ActionExtract
 		tarball = *extractFlag
 	}
 
 	logger, ctx = logging.WithAttrs(ctx, "tarball", tarball)
 
 	switch action {
-	case Create:
-		logger.Info("creating")
-		f, err := os.Create(tarball)
-		if err != nil {
+	case ActionCreate:
+		var buf bytes.Buffer
+		if err := m.Create(ctx, &buf); err != nil {
 			log.Fatal(err)
 		}
-		defer f.Close()
 
-		if err := m.Create(ctx, f); err != nil {
+		if err := Create(ctx, tarball, &buf); err != nil {
 			log.Fatal(err)
 		}
-	case Extract:
+	case ActionExtract:
 		logger.Info("extracting")
-		f, err := os.Open(tarball)
+		f, err := Open(ctx, tarball)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -97,5 +224,6 @@ func main() {
 		if err := m.Extract(ctx, f); err != nil {
 			log.Fatal(err)
 		}
+	case ActionNoop:
 	}
 }
