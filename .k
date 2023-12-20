@@ -1,3 +1,5 @@
+export SITEPKG_LOG_LEVEL=DEBUG
+
 run() {
     make run \
         SITEPKG_MANIFEST=example.manifest \
