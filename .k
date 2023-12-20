@@ -1,4 +1,5 @@
 export SITEPKG_LOG_LEVEL=DEBUG
+#export SITEPKG_LOG_LEVEL=INFO
 
 run() {
     #make run \
@@ -9,9 +10,9 @@ run() {
         #SITEPKG_CHROOT=tmp \
         #SITEPKG_EXTRACT=s3://rootmos-config/example.tar
 
-    make run \
-        SITEPKG_MANIFEST=example.manifest \
-        SITEPKG_CREATE=file://example.tar
+    #make run \
+        #SITEPKG_MANIFEST=example.manifest \
+        #SITEPKG_CREATE=file://example.tar
     make run \
         SITEPKG_MANIFEST=example.manifest \
         SITEPKG_CHROOT=tmp \

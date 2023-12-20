@@ -28,6 +28,15 @@ func (m *Manifest) Resolve(ctx context.Context, p string) string {
 	return q
 }
 
+func (m *Manifest) Has(path string) bool {
+	for _, p := range m.Paths {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
 func Load(ctx context.Context, path, root string) (m *Manifest, err error) {
 	logger, ctx := logging.WithAttrs(ctx, "manifest", path)
 
@@ -105,6 +114,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 }
 
 func (m *Manifest) Extract(ctx context.Context, r io.Reader) (err error) {
+	logger := logging.Get(ctx)
 	tr := tar.NewReader(r)
 
 	extract := func(hdr *tar.Header) (err error) {
@@ -140,6 +150,11 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) (err error) {
 		}
 		if err != nil {
 			return
+		}
+
+		if !m.Has(hdr.Name) {
+			logger.Debug("skipping", "name", hdr.Name)
+			continue
 		}
 
 		if err = extract(hdr); err != nil {
