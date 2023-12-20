@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"strings"
 	"fmt"
+	"errors"
 
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
@@ -19,6 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 var s3Client *s3.Client
@@ -99,6 +102,17 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 	}
 }
 
+func IsS3NoSuchKey(err error) bool {
+	var apiError smithy.APIError
+	if errors.As(err, &apiError) {
+		switch apiError.(type) {
+		case *types.NoSuchKey:
+			return true
+		}
+	}
+	return false
+}
+
 func Open(ctx context.Context, rawUrl string) (io.ReadCloser, error) {
 	logger := logging.Get(ctx)
 
@@ -150,6 +164,8 @@ func main() {
 	createFlag := flag.String("create", common.Getenv("CREATE"), "write tarball")
 	extractFlag := flag.String("extract", common.Getenv("EXTRACT"), "extract tarball")
 	// verifyFlag := flag.String("verify", common.Getenv("VERIFY"), "verify tarball") // or status? check? test?
+
+	noExistsOkFlag := flag.Bool("no-exists-ok", common.GetenvBool("NO_EXISTS_OK"), "fail gracefully if tarball does not exist")
 
 	flag.Parse()
 
@@ -224,6 +240,10 @@ func main() {
 	case ActionExtract:
 		logger.Info("extracting")
 		f, err := Open(ctx, tarball)
+		if IsS3NoSuchKey(err) && *noExistsOkFlag {
+			logger.Info("gracefully failing: no such key")
+			break
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
