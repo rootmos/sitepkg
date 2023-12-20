@@ -1,8 +1,13 @@
-export SITEPKG_LOG_LEVEL=DEBUG
+export SITEPKG_LOG_LEVEL=INFO
 
 run() {
     make run \
         SITEPKG_MANIFEST=example.manifest \
-        SITEPKG_OUTPUT=example.tar \
+        SITEPKG_CREATE=example.tar \
         && tar tf example.tar
+
+    make run \
+        SITEPKG_MANIFEST=example.manifest \
+        SITEPKG_CHROOT=tmp \
+        SITEPKG_EXTRACT=example.tar
 }
