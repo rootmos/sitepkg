@@ -147,3 +147,85 @@ func TestTarballRoundtripEmptyDirectory(t *testing.T) {
 		t.Fatalf("not a directory: %s", p)
 	}
 }
+
+func TestTarballRoundtripDirectoryNoRecurse(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	dir := filepath.Join(a, "dir")
+	bs := PopulateFile(t, filepath.Join(dir, "foo"))
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+			filepath.Join("dir", "foo"),
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+			filepath.Join("dir", "foo"),
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unable to extract tarball: %v", err)
+	}
+
+	CheckFile(t, filepath.Join(b, "dir", "foo"), bs)
+}
+
+func TestTarballRoundtripNonEmptyDirectory(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	dir := filepath.Join(a, "dir")
+	_ = PopulateFile(t, filepath.Join(dir, "foo"))
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unable to extract tarball: %v", err)
+	}
+
+	p := filepath.Join(b, "dir")
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatalf("unable to stat; %s: %v", p, err)
+	}
+
+	if !fi.IsDir() {
+		t.Fatalf("not a directory: %s", p)
+	}
+}
