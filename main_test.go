@@ -103,3 +103,47 @@ func TestTarballRoundtripOneFileAtRoot(t *testing.T) {
 
 	CheckFile(t, filepath.Join(b, "foo"), bs)
 }
+
+func TestTarballRoundtripEmptyDirectory(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	dir := filepath.Join(a, "dir")
+	Must0(os.MkdirAll(dir, 0755))
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unable to extract tarball: %v", err)
+	}
+
+	p := filepath.Join(b, "dir")
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatalf("unable to stat; %s: %v", p, err)
+	}
+
+	if !fi.IsDir() {
+		t.Fatalf("not a directory: %s", p)
+	}
+}

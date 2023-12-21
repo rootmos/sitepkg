@@ -83,19 +83,28 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 
 	add := func(p string) (err error) {
 		path := m.Resolve(ctx, p)
-		logger, _ := logging.WithAttrs(ctx, "path", path)
-		logger.Info("adding", "name", p)
-
 		fi, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
 
-		hdr, err := tar.FileInfoHeader(fi, "") // TODO: symlinks
+		logger, _ := logging.WithAttrs(ctx, "name", p, "path", path, "mode", fi.Mode())
+
+		hdr, err := tar.FileInfoHeader(fi, "")
 		hdr.Name = p
 
 		if err = tw.WriteHeader(hdr); err != nil {
 			return err
+		}
+
+		if fi.IsDir() {
+			logger.Info("add dir")
+			return nil
+		}
+
+		if !fi.Mode().IsRegular() {
+			// TODO: symlinks
+			return fmt.Errorf("non-regular files not supported: %s", path)
 		}
 
 		f, err := os.Open(path)
@@ -113,7 +122,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 		if err != nil {
 			return err
 		}
-		logger.Debug("wrote", "bytes", n, "SHA256", rh.HexDigest())
+		logger.Info("add file", "bytes", n, "SHA256", rh.HexDigest())
 
 		return
 	}
@@ -134,9 +143,19 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 
 	extract := func(hdr *tar.Header) (err error) {
 		path := m.Resolve(ctx, hdr.Name)
-		logger, _ := logging.WithAttrs(ctx, "path", path)
-		logger.Info("extracting", "name", hdr.Name)
+		mode := os.FileMode(hdr.Mode)
+		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode)
 
+		if hdr.Typeflag == tar.TypeDir {
+			logger.Info("mkdir")
+			return os.Mkdir(path, mode)
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			return fmt.Errorf("non-regular files not supported: %s", hdr.Name)
+		}
+
+		logger.Debug("opening")
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, os.FileMode(hdr.Mode))
 		if err != nil {
 			return err
@@ -147,12 +166,13 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 			}
 		}()
 
+		logger.Debug("writing")
 		rh := common.ReaderSHA256(tr)
 		n, err := io.Copy(f, rh)
 		if err != nil {
 			return
 		}
-		logger.Debug("wrote", "bytes", n, "SHA256", rh.HexDigest())
+		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest())
 
 		return
 	}
