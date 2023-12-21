@@ -211,7 +211,11 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 
 	for _, p := range m.Paths {
 		if !extracted[p] {
-			return fmt.Errorf("not found in tarball: %s", p)
+			if m.IgnoreMissing {
+				logger.Info("missing", "name", p)
+			} else {
+				return fmt.Errorf("not found in tarball: %s", p)
+			}
 		}
 	}
 

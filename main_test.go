@@ -245,8 +245,7 @@ func TestTarballFailForMissingFilesWhenCreating(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := m0.Create(ctx, &buf)
-	if !os.IsNotExist(err) {
+	if err := m0.Create(ctx, &buf); !os.IsNotExist(err) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -270,5 +269,65 @@ func TestTarballIgnoreMissingFilesWhenCreating(t *testing.T) {
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
 		t.Fatalf("unable to create tarball: %v", err)
+	}
+}
+
+func TestTarballFailForMissingFilesWhenExtracting(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+
+	m0 := &manifest.Manifest {
+		Root: a,
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		IgnoreMissing: false,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err == nil {
+		t.Fatalf("unexpected success")
+	}
+}
+
+func TestTarballIgnoreMissingFilesWhenExtracting(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+
+	m0 := &manifest.Manifest {
+		Root: a,
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		IgnoreMissing: true,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unexpected failure: %v", err)
 	}
 }
