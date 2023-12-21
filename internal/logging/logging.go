@@ -12,6 +12,7 @@ import (
 
 var (
 	LogLevelFlag = flag.String("log-level", common.Getenv("LOG_LEVEL"), "set logging level")
+	JsonLoggingFlag = flag.Bool("log-json", common.GetenvBool("LOG_JSON"), "log JSON objects (instead of plain-text)")
 	Level = new(slog.LevelVar)
 	Key = "logging"
 )
@@ -35,7 +36,14 @@ func SetupLogger(w io.Writer) (*slog.Logger, error) {
 		w = os.Stderr
 	}
 	opts := slog.HandlerOptions{ Level: Level }
-	logger := slog.New(slog.NewTextHandler(w, &opts))
+
+	var logger *slog.Logger
+	if JsonLoggingFlag != nil && *JsonLoggingFlag {
+		logger = slog.New(slog.NewJSONHandler(w, &opts))
+	} else {
+		logger = slog.New(slog.NewTextHandler(w, &opts))
+	}
+
 	return logger, nil
 }
 
