@@ -10,6 +10,8 @@ import (
 	"time"
 	"bytes"
 	"io"
+	"encoding/hex"
+	"crypto/sha256"
 
 	"rootmos.io/sitepkg/internal/manifest"
 	testinglogging "rootmos.io/sitepkg/internal/logging/testing"
@@ -55,16 +57,30 @@ func PopulateFile(t *testing.T, path string) (bs []byte) {
 
 	_ = Must(io.Copy(f, bytes.NewReader(bs)))
 
+	dgst := sha256.Sum256(bs)
+	t.Logf("populated file: %s (len=%d SHA256=%s)",
+		path, n,
+		hex.EncodeToString(dgst[:]),
+	)
+
 	return
 }
 
-func CheckFile(t *testing.T, path string, bs []byte) {
+func CheckFile(t *testing.T, path string, bs0 []byte) {
 	f := Must(os.Open(path))
 	defer f.Close()
 
-	bs0 := Must(io.ReadAll(f))
-	if !bytes.Equal(bs, bs0) {
-		t.Errorf("content mismatch: %s", path)
+	bs1 := Must(io.ReadAll(f))
+	if !bytes.Equal(bs0, bs1) {
+		dgst0 := sha256.Sum256(bs0)
+		dgst1 := sha256.Sum256(bs1)
+		t.Errorf("content mismatch: %s (actual: len=%d SHA256=%s) (expected: len=%d SHA256=%s)",
+			path,
+			len(bs0),
+			hex.EncodeToString(dgst1[:]),
+			len(bs1),
+			hex.EncodeToString(dgst0[:]),
+		)
 	}
 }
 
@@ -329,5 +345,77 @@ func TestTarballIgnoreMissingFilesWhenExtracting(t *testing.T) {
 
 	if err := m1.Extract(ctx, &buf); err != nil {
 		t.Fatalf("unexpected failure: %v", err)
+	}
+}
+
+func TestTarballOverwriteFile(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	foo := filepath.Join(a, "foo")
+	bs0 := PopulateFile(t, foo)
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	foo = filepath.Join(b, "foo")
+	_ = PopulateFile(t, foo)
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unable to extract tarball: %v", err)
+	}
+
+	CheckFile(t, foo, bs0)
+}
+
+func TestTarballExistingDir(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	dir := filepath.Join(a, "dir")
+	Must0(os.MkdirAll(dir, 0755))
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	dir = filepath.Join(b, "dir")
+	Must0(os.MkdirAll(dir, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Fatalf("unable to extract tarball: %v", err)
 	}
 }

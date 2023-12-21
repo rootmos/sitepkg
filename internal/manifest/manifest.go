@@ -158,7 +158,11 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 
 		if hdr.Typeflag == tar.TypeDir {
 			logger.Info("mkdir")
-			return os.Mkdir(path, mode)
+			err = os.Mkdir(path, mode)
+			if os.IsExist(err) {
+				err = nil
+			}
+			return
 		}
 
 		if hdr.Typeflag != tar.TypeReg {
@@ -166,7 +170,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		}
 
 		logger.Debug("opening")
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, os.FileMode(hdr.Mode))
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(hdr.Mode))
 		if err != nil {
 			return err
 		}
