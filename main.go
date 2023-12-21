@@ -177,7 +177,8 @@ func main() {
 	extractFlag := flag.String("extract", common.Getenv("EXTRACT"), "extract tarball")
 	// verifyFlag := flag.String("verify", common.Getenv("VERIFY"), "verify tarball") // or status? check? test?
 
-	notExistOkFlag := flag.Bool("not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
+	ignoreMissingFlag := flag.Bool("ignore-missing", common.GetenvBool("IGNORE_MISSING"), "ignore missing files")
+	tarballNotExistOkFlag := flag.Bool("tarball-not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
 
 	flag.Parse()
 
@@ -209,6 +210,7 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	m.IgnoreMissing = *ignoreMissingFlag
 
 	for _, p := range flag.Args() {
 		m.Add(p)
@@ -252,7 +254,7 @@ func main() {
 	case ActionExtract:
 		logger.Info("extracting")
 		f, err := Open(ctx, tarball)
-		if IsNotExist(err) && *notExistOkFlag {
+		if IsNotExist(err) && *tarballNotExistOkFlag {
 			logger.Info("failing gracefully: does not exist", "tarball", tarball)
 			break
 		}
