@@ -11,6 +11,9 @@ build: FORCE
 run: build
 	$(TARGET)/$(EXE)
 
+test:
+	$(GO) test -v
+
 clean:
 	rm -rf $(TARGET)
 
@@ -18,6 +21,6 @@ deepclean: clean
 	-chmod +w -R $(GOPATH)
 	rm -rf $(GOPATH)
 
-.PHONY: build run
+.PHONY: build run test
 .PHONY: clean deepclean
 FORCE:

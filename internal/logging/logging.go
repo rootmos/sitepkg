@@ -5,27 +5,46 @@ import (
 	"flag"
 	"os"
 	"context"
+	"io"
 
 	"rootmos.io/sitepkg/internal/common"
 )
 
 var (
 	LogLevelFlag = flag.String("log-level", common.Getenv("LOG_LEVEL"), "set logging level")
+	Level = new(slog.LevelVar)
 	Key = "logging"
 )
 
-func SetupDefaultLogger() (*slog.Logger, error) {
-	level := slog.LevelInfo
-	if *LogLevelFlag != "" {
-		err := level.UnmarshalText([]byte(*LogLevelFlag))
-		if err != nil {
-			return nil, err
+func ParseLogLevelFlag() (err error) {
+	if LogLevelFlag != nil && *LogLevelFlag != "" {
+		var lvl slog.Level
+		err = lvl.UnmarshalText([]byte(*LogLevelFlag))
+		if err == nil {
+			Level.Set(lvl)
 		}
 	}
-	opts := slog.HandlerOptions{ Level: level }
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &opts))
-	slog.SetDefault(logger)
+	return
+}
+
+func SetupLogger(w io.Writer) (*slog.Logger, error) {
+	if err := ParseLogLevelFlag(); err != nil {
+		return nil, err
+	}
+	if w == nil {
+		w = os.Stderr
+	}
+	opts := slog.HandlerOptions{ Level: Level }
+	logger := slog.New(slog.NewTextHandler(w, &opts))
 	return logger, nil
+}
+
+func SetupDefaultLogger() (*slog.Logger, error) {
+	logger, err := SetupLogger(nil)
+	if err == nil {
+		slog.SetDefault(logger)
+	}
+	return logger, err
 }
 
 func Set(ctx context.Context, logger *slog.Logger) context.Context {

@@ -102,7 +102,11 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 	}
 }
 
-func IsS3NoSuchKey(err error) bool {
+func IsNotExist(err error) bool {
+	if os.IsNotExist(err) {
+		return true
+	}
+
 	var apiError smithy.APIError
 	if errors.As(err, &apiError) {
 		switch apiError.(type) {
@@ -110,6 +114,7 @@ func IsS3NoSuchKey(err error) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -165,7 +170,7 @@ func main() {
 	extractFlag := flag.String("extract", common.Getenv("EXTRACT"), "extract tarball")
 	// verifyFlag := flag.String("verify", common.Getenv("VERIFY"), "verify tarball") // or status? check? test?
 
-	noExistsOkFlag := flag.Bool("no-exists-ok", common.GetenvBool("NO_EXISTS_OK"), "fail gracefully if tarball does not exist")
+	notExistOkFlag := flag.Bool("not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
 
 	flag.Parse()
 
@@ -240,8 +245,8 @@ func main() {
 	case ActionExtract:
 		logger.Info("extracting")
 		f, err := Open(ctx, tarball)
-		if IsS3NoSuchKey(err) && *noExistsOkFlag {
-			logger.Info("gracefully failing: no such key")
+		if IsNotExist(err) && *notExistOkFlag {
+			logger.Info("failing gracefully: does not exist", "tarball", tarball)
 			break
 		}
 		if err != nil {
