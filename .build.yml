@@ -1,0 +1,14 @@
+image: alpine/edge
+packages:
+  - go
+tasks:
+  - build: |
+      cd sitepkg
+      make build
+  - test: |
+      cd sitepkg
+      make test VERBOSE=1 SITEPKG_LOG_LEVEL=DEBUG
+triggers:
+  - action: email
+    condition: always
+    to: builds@rootmos.io
