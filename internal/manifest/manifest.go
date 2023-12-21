@@ -50,6 +50,9 @@ func Load(ctx context.Context, path, root string) (m *Manifest, err error) {
 	logger, ctx := logging.WithAttrs(ctx, "manifest", path)
 
 	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
 	defer f.Close()
 
 	m = &Manifest{
