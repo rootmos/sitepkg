@@ -1,11 +1,11 @@
 export SITEPKG_LOG_LEVEL=DEBUG
 #export SITEPKG_LOG_LEVEL=INFO
 
-run0() {
+run() {
     make test VERBOSE=1
 }
 
-run() {
+run0() {
     make run \
         SITEPKG_MANIFEST=example.manifest \
         SITEPKG_CREATE=s3://rootmos-config/example.tar

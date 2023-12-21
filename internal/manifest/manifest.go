@@ -69,10 +69,15 @@ func Load(ctx context.Context, path, root string) (m *Manifest, err error) {
 }
 
 func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
-	tw := tar.NewWriter(w)
+	logger := logging.Get(ctx)
+	wh := common.WriterSHA256(w)
+	tw := tar.NewWriter(wh)
 	defer func() {
 		if e := tw.Close(); err == nil {
 			err = e
+		}
+		if err == nil {
+			logger.Debug("finished writing tarball", "SHA256", wh.HexDigest())
 		}
 	}()
 
@@ -124,7 +129,8 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 
 func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 	logger := logging.Get(ctx)
-	tr := tar.NewReader(r)
+	rh := common.ReaderSHA256(r)
+	tr := tar.NewReader(rh)
 
 	extract := func(hdr *tar.Header) (err error) {
 		path := m.Resolve(ctx, hdr.Name)
@@ -173,6 +179,8 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 
 		extracted[hdr.Name] = true
 	}
+
+	logger.Debug("finished reading tarball", "SHA256", rh.HexDigest())
 
 	for _, p := range m.Paths {
 		if !extracted[p] {
