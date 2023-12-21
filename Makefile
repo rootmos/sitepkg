@@ -14,6 +14,10 @@ run: build
 test:
 	$(GO) test -v
 
+update:
+	$(GO) get -u
+	$(GO) mod tidy
+
 clean:
 	rm -rf $(TARGET)
 
@@ -22,5 +26,6 @@ deepclean: clean
 	rm -rf $(GOPATH)
 
 .PHONY: build run test
+.PHONY: update
 .PHONY: clean deepclean
 FORCE:
