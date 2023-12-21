@@ -12,7 +12,7 @@ run: build
 	$(TARGET)/$(EXE)
 
 test:
-	$(GO) test -v
+	$(GO) test
 
 update:
 	$(GO) get -u
