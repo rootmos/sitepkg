@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 
+	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
 )
 
@@ -102,11 +103,12 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 			}
 		}()
 
-		n, err := io.Copy(tw, f)
+		rh := common.ReaderSHA256(f)
+		n, err := io.Copy(tw, rh)
 		if err != nil {
 			return err
 		}
-		logger.Debug("wrote", "bytes", n)
+		logger.Debug("wrote", "bytes", n, "SHA256", rh.HexDigest())
 
 		return
 	}
@@ -139,11 +141,12 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 			}
 		}()
 
-		n, err := io.Copy(f, tr)
+		rh := common.ReaderSHA256(tr)
+		n, err := io.Copy(f, rh)
 		if err != nil {
 			return
 		}
-		logger.Debug("wrote", "bytes", n)
+		logger.Debug("wrote", "bytes", n, "SHA256", rh.HexDigest())
 
 		return
 	}

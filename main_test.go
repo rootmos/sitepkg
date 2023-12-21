@@ -39,7 +39,7 @@ func TestTarballNotExist(t *testing.T) {
 	}
 }
 
-func PopulateFile(path string) (bs []byte) {
+func PopulateFile(t *testing.T, path string) (bs []byte) {
 	Must0(os.MkdirAll(filepath.Dir(path), 0755))
 	f := Must(os.Create(path))
 	defer f.Close()
@@ -74,7 +74,7 @@ func TestTarballRoundtripOneFileAtRoot(t *testing.T) {
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
 	foo := filepath.Join(a, "foo")
-	bs := PopulateFile(foo)
+	bs := PopulateFile(t, foo)
 
 	m0 := &manifest.Manifest {
 		Root: a,

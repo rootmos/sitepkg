@@ -66,14 +66,19 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 		bucket, key := bucketKeyFromUrl(u)
 		logger, ctx = logging.WithAttrs(ctx, "bucket", bucket, "key", key)
 
-		logger.Debug("put object")
+		var buf bytes.Buffer
+		rh := common.ReaderSHA256(r)
+		n, err := io.Copy(&buf, rh)
+
+		logger.Debug("putting object", "bytes", n, "SHA256", rh.HexDigest())
 		o, err := s3c.PutObject(ctx, &s3.PutObjectInput {
 			Bucket: aws.String(bucket),
 			Key: aws.String(key),
-			Body: r,
+			Body: &buf,
+			ChecksumSHA256: aws.String(rh.B64Digest()),
 		})
 		if err == nil {
-			logger.Debug("put object successful", "VersionId", aws.ToString(o.VersionId))
+			logger.Info("put object", "VersionId", aws.ToString(o.VersionId), "SHA256", rh.B64Digest())
 		}
 		return err
 	case "": fallthrough
@@ -89,12 +94,14 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 		}
 		defer f.Close()
 
-		n, err := io.Copy(f, r)
+		wh := common.WriterSHA256(f)
+
+		n, err := io.Copy(wh, r)
 		if err != nil {
 			return err
 		}
 		if err == nil {
-			logger.Debug("wrote", "bytes", n)
+			logger.Debug("wrote", "bytes", n, "SHA256", wh.HexDigest())
 		}
 		return err
 	default:
