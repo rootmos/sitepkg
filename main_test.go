@@ -229,3 +229,46 @@ func TestTarballRoundtripNonEmptyDirectory(t *testing.T) {
 		t.Fatalf("not a directory: %s", p)
 	}
 }
+
+func TestTarballFailForMissingFilesWhenCreating(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		IgnoreMissing: false,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	var buf bytes.Buffer
+	err := m0.Create(ctx, &buf)
+	if !os.IsNotExist(err) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTarballIgnoreMissingFilesWhenCreating(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	_ = PopulateFile(t, filepath.Join(a, "foo"))
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		IgnoreMissing: true,
+		Paths: []string{
+			"foo",
+			"bar",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Fatalf("unable to create tarball: %v", err)
+	}
+}

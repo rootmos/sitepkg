@@ -15,6 +15,7 @@ import (
 
 type Manifest struct {
 	Root string
+	IgnoreMissing bool
 	Paths []string
 }
 
@@ -83,12 +84,18 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 
 	add := func(p string) (err error) {
 		path := m.Resolve(ctx, p)
+		logger, ctx = logging.WithAttrs(ctx, "name", p, "path", path)
+
 		fi, err := os.Stat(path)
+		if os.IsNotExist(err) && m.IgnoreMissing {
+			logger.Info("ignoring missing")
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 
-		logger, _ := logging.WithAttrs(ctx, "name", p, "path", path, "mode", fi.Mode())
+		logger, ctx = logging.WithAttrs(ctx, "mode", fi.Mode())
 
 		hdr, err := tar.FileInfoHeader(fi, "")
 		hdr.Name = p
