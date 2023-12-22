@@ -12,6 +12,8 @@ import (
 	"strings"
 	"fmt"
 	"errors"
+	"compress/gzip"
+	"strconv"
 
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
@@ -78,7 +80,7 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 			ChecksumSHA256: aws.String(rh.B64Digest()),
 		})
 		if err == nil {
-			logger.Info("put object", "VersionId", aws.ToString(o.VersionId), "SHA256", rh.B64Digest())
+			logger.Debug("put object", "VersionId", aws.ToString(o.VersionId), "SHA256", rh.B64Digest())
 		}
 		return err
 	case "": fallthrough
@@ -180,6 +182,8 @@ func main() {
 	ignoreMissingFlag := flag.Bool("ignore-missing", common.GetenvBool("IGNORE_MISSING"), "ignore missing files")
 	tarballNotExistOkFlag := flag.Bool("tarball-not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
 
+	gzipFlag := flag.String("gzip", common.Getenv("GZIP"), "compress using gzip level")
+
 	flag.Parse()
 
 	logger, err := logging.SetupDefaultLogger()
@@ -193,13 +197,17 @@ func main() {
 	root := *chrootFlag
 	if root == "" {
 		root, err = os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		logger.Debug("root", "path", root)
 	} else {
 		root, err = filepath.Abs(root)
+		if err != nil {
+			log.Fatal(err)
+		}
+		logger.Info("root", "path", root)
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
-	logger.Info("chroot", "path", root)
 
 	var m *manifest.Manifest
 	if *manifestFlag == "" {
@@ -241,6 +249,16 @@ func main() {
 
 	logger, ctx = logging.WithAttrs(ctx, "tarball", tarball)
 
+	gzipLevel := gzip.NoCompression
+	if *gzipFlag != "" {
+		gzipLevel, err = strconv.Atoi(*gzipFlag)
+		if err != nil {
+			log.Fatal("unable to parse as integer: %s (%v)", *gzipFlag, err)
+		}
+	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".tgz") {
+		gzipLevel = gzip.DefaultCompression
+	}
+
 	switch action {
 	case ActionCreate:
 		var buf bytes.Buffer
@@ -248,9 +266,33 @@ func main() {
 			log.Fatal(err)
 		}
 
-		if err := Create(ctx, tarball, &buf); err != nil {
+		r := io.Reader(&buf)
+		if gzipLevel != gzip.NoCompression {
+			var cmp bytes.Buffer
+			w, err := gzip.NewWriterLevel(&cmp, gzipLevel)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			n, err := io.Copy(w, r)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			w.Close()
+
+			logger.Debug("gzip", "level", gzipLevel, "original", n, "compressed", cmp.Len())
+
+			r = io.Reader(&cmp)
+		}
+
+		rh := common.ReaderSHA256(r)
+
+		if err := Create(ctx, tarball, rh); err != nil {
 			log.Fatal(err)
 		}
+
+		logger.Info("created", "SHA256", rh.HexDigest())
 	case ActionExtract:
 		logger.Info("extracting")
 		f, err := Open(ctx, tarball)
@@ -263,9 +305,22 @@ func main() {
 		}
 		defer f.Close()
 
-		if err := m.Extract(ctx, f); err != nil {
+		rh := common.ReaderSHA256(f)
+		r := io.Reader(rh)
+		if gzipLevel != gzip.NoCompression {
+			g, err := gzip.NewReader(r)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer g.Close()
+			r = g
+		}
+
+		if err := m.Extract(ctx, r); err != nil {
 			log.Fatal(err)
 		}
+
+		logger.Info("extracted", "SHA256", rh.HexDigest())
 	case ActionNoop:
 	}
 }
