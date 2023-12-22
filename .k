@@ -31,3 +31,7 @@ run0() {
 
     true
 }
+
+docker() {
+    make docker SUDO="sudo -A"
+}

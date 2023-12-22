@@ -18,6 +18,11 @@ update:
 	$(GO) get -u
 	$(GO) mod tidy
 
+SUDO ?=
+DOCKER ?= docker
+docker:
+	$(SUDO) $(DOCKER) build --progress=plain --iidfile=.image .
+
 clean:
 	rm -rf $(TARGET)
 

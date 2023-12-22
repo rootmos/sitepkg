@@ -8,6 +8,8 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
+	"os/user"
+	"strconv"
 
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
@@ -186,7 +188,29 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		if err != nil {
 			return
 		}
-		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest())
+
+		uid := hdr.Uid
+		u, err := user.Lookup(hdr.Uname)
+		if err == nil {
+			if id, err := strconv.Atoi(u.Uid); err == nil {
+				uid = id
+			}
+		}
+
+		gid := hdr.Gid
+		g, err := user.LookupGroup(hdr.Uname)
+		if err == nil {
+			if id, err := strconv.Atoi(g.Gid); err == nil {
+				gid = id
+			}
+		}
+
+		err = os.Chown(path, uid, gid)
+		if err != nil {
+			return
+		}
+
+		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest(), "uid", uid, "gid", gid)
 
 		return
 	}
