@@ -118,8 +118,17 @@ func FileMode(path string) (os.FileMode, error) {
 }
 
 func RandomMode() os.FileMode {
-	mode := prng.Intn(0777 + 1)
-	return os.FileMode(mode)
+	mode := os.FileMode(prng.Intn(0777 + 1))
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSetuid
+	}
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSetgid
+	}
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSticky
+	}
+	return mode
 }
 
 func GetUmask() os.FileMode {
@@ -528,7 +537,7 @@ func TestTarballUidAndGid(t *testing.T) {
 	}
 }
 
-func TestTarballMode(t *testing.T) {
+func TestTarballModeFile(t *testing.T) {
 	ctx := testinglogging.SetupLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
@@ -537,6 +546,7 @@ func TestTarballMode(t *testing.T) {
 	_ = PopulateFile(t, foo)
 
 	mode0 := RandomMode()
+	mode0 |= 0400 // of course the file needs to be readable to create tarball
 	if err := os.Chmod(foo, mode0); err != nil {
 		t.Skipf("unable to chmod(%s, %#o): %v", foo, mode0, err)
 	}
@@ -572,9 +582,61 @@ func TestTarballMode(t *testing.T) {
 		t.Errorf("unable to stat file: %s", path)
 	}
 
-	masked := mode0 & ^GetUmask()
+	//masked := mode0 & ^GetUmask()
+	masked := mode0
 
 	if masked != mode1 {
 		t.Errorf("mode mismatch; %s: %#o != %#o", path, masked, mode1)
+	}
+}
+
+func TestTarballModeDir(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	Must0(os.Mkdir(a, 0755))
+
+	dir := filepath.Join(a, "dir")
+	mode0 := RandomMode() | os.ModeDir
+	mode0 &= ^os.ModeSetuid
+	mode0 &= ^os.ModeSetgid
+	oldmask := syscall.Umask(0)
+	Must0(os.Mkdir(dir, mode0))
+	syscall.Umask(oldmask)
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Errorf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+
+	path := filepath.Join(b, "dir")
+	mode1, err := FileMode(path)
+	if err != nil {
+		t.Errorf("unable to stat file: %s", path)
+	}
+
+	if mode0 != mode1 {
+		t.Errorf("mode mismatch; %s: %#o != %#o", path, mode0, mode1)
 	}
 }
