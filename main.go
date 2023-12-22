@@ -253,7 +253,7 @@ func main() {
 	if *gzipFlag != "" {
 		gzipLevel, err = strconv.Atoi(*gzipFlag)
 		if err != nil {
-			log.Fatal("unable to parse as integer: %s (%v)", *gzipFlag, err)
+			log.Fatalf("unable to parse as integer: %s (%v)", *gzipFlag, err)
 		}
 	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".tgz") {
 		gzipLevel = gzip.DefaultCompression
