@@ -12,7 +12,7 @@ run: build
 	$(TARGET)/$(EXE)
 
 test:
-	$(GO) test $(if $(VERBOSE),-v,)
+	$(GO) test $(if $(VERBOSE),-v,) ./...
 
 update:
 	$(GO) get -u
