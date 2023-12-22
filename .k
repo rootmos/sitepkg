@@ -3,7 +3,7 @@ export SITEPKG_LOG_LEVEL=DEBUG
 #export SITEPKG_LOG_JSON=1
 
 run() {
-    make test VERBOSE=
+    make test VERBOSE=1
 }
 
 run0() {
