@@ -215,7 +215,8 @@ func main() {
 	} else {
 		m, err = manifest.Load(ctx, *manifestFlag, root)
 		if err != nil {
-			log.Fatal(err)
+			logger.Error("unable to load manifest", "manifest", *manifestFlag, "err", err)
+			os.Exit(1)
 		}
 	}
 	m.IgnoreMissing = *ignoreMissingFlag
@@ -234,14 +235,16 @@ func main() {
 	var tarball string
 	if *createFlag != "" {
 		if action != ActionNoop {
-			log.Fatal("more than one action specified")
+			fmt.Fprint(os.Stderr, "more than one action specified")
+			os.Exit(2)
 		}
 		action = ActionCreate
 		tarball = *createFlag
 	}
 	if *extractFlag != "" {
 		if action != ActionNoop {
-			log.Fatal("more than one action specified")
+			fmt.Fprint(os.Stderr, "more than one action specified")
+			os.Exit(2)
 		}
 		action = ActionExtract
 		tarball = *extractFlag
@@ -253,7 +256,8 @@ func main() {
 	if *gzipFlag != "" {
 		gzipLevel, err = strconv.Atoi(*gzipFlag)
 		if err != nil {
-			log.Fatalf("unable to parse as integer: %s (%v)", *gzipFlag, err)
+			fmt.Fprintf(os.Stderr, "unable to parse as integer: %s (%v)", *gzipFlag, err)
+			os.Exit(2)
 		}
 	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".tgz") {
 		gzipLevel = gzip.DefaultCompression
@@ -263,7 +267,8 @@ func main() {
 	case ActionCreate:
 		var buf bytes.Buffer
 		if err := m.Create(ctx, &buf); err != nil {
-			log.Fatal(err)
+			logger.Error("unable to create tarball", "err", err)
+			os.Exit(1)
 		}
 
 		r := io.Reader(&buf)
@@ -271,12 +276,14 @@ func main() {
 			var cmp bytes.Buffer
 			w, err := gzip.NewWriterLevel(&cmp, gzipLevel)
 			if err != nil {
-				log.Fatal(err)
+				logger.Error("unable to initialize gzip", "err", err)
+				os.Exit(1)
 			}
 
 			n, err := io.Copy(w, r)
 			if err != nil {
-				log.Fatal(err)
+				logger.Error("unable to write gzip", "err", err)
+				os.Exit(1)
 			}
 
 			w.Close()
@@ -289,7 +296,8 @@ func main() {
 		rh := common.ReaderSHA256(r)
 
 		if err := Create(ctx, tarball, rh); err != nil {
-			log.Fatal(err)
+			logger.Error("unable to write tarball", "err", err)
+			os.Exit(1)
 		}
 
 		logger.Info("created", "SHA256", rh.HexDigest())
@@ -301,7 +309,8 @@ func main() {
 			break
 		}
 		if err != nil {
-			log.Fatal(err)
+			logger.Error("unable to open tarball", "err", err)
+			os.Exit(1)
 		}
 		defer f.Close()
 
@@ -310,17 +319,20 @@ func main() {
 		if gzipLevel != gzip.NoCompression {
 			g, err := gzip.NewReader(r)
 			if err != nil {
-				log.Fatal(err)
+				logger.Error("unable to initialize gzip", "err", err)
+				os.Exit(1)
 			}
 			defer g.Close()
 			r = g
 		}
 
 		if err := m.Extract(ctx, r); err != nil {
-			log.Fatal(err)
+			logger.Error("unable to extract tarball", "err", err)
+			os.Exit(1)
 		}
 
 		logger.Info("extracted", "SHA256", rh.HexDigest())
 	case ActionNoop:
+		logger.Info("noop")
 	}
 }
