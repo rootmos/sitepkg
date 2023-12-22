@@ -3,7 +3,7 @@ export SITEPKG_LOG_LEVEL=DEBUG
 #export SITEPKG_LOG_JSON=1
 
 run() {
-    make test VERBOSE=
+    make test VERBOSE=1
 }
 
 run0() {
@@ -30,4 +30,8 @@ run0() {
         #SITEPKG_NO_EXISTS_OK=1
 
     true
+}
+
+docker() {
+    make docker SUDO="sudo -A"
 }

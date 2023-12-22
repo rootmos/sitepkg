@@ -12,10 +12,18 @@ import (
 	"io"
 	"encoding/hex"
 	"crypto/sha256"
+	"os/user"
+	"math"
+	"strconv"
+	"syscall"
+	"fmt"
 
 	"rootmos.io/sitepkg/internal/manifest"
 	testinglogging "rootmos.io/sitepkg/internal/logging/testing"
 )
+
+var seed = time.Now().UnixNano()
+var prng = rand.New(rand.NewSource(seed))
 
 func Must0(err error) {
 	if err != nil {
@@ -30,17 +38,6 @@ func Must[T any](obj T, err error) T {
 	return obj
 }
 
-func TestTarballNotExist(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
-	tmp := t.TempDir()
-	noent := filepath.Join(tmp, "noent")
-
-	_, err := Open(ctx, noent)
-	if !IsNotExist(err) {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func PopulateFile(t *testing.T, path string) (bs []byte) {
 	Must0(os.MkdirAll(filepath.Dir(path), 0755))
 	f := Must(os.Create(path))
@@ -53,7 +50,7 @@ func PopulateFile(t *testing.T, path string) (bs []byte) {
 
 	bs = make([]byte, n)
 
-	_ = Must(r.Read(bs))
+	_ = Must(prng.Read(bs))
 
 	_ = Must(io.Copy(f, bytes.NewReader(bs)))
 
@@ -84,6 +81,73 @@ func CheckFile(t *testing.T, path string, bs0 []byte) {
 	}
 }
 
+func RandomUidGid() (int, int) {
+	u, err := user.Lookup("nobody")
+	var max int
+	if err != nil {
+		max = math.MaxInt16
+	} else {
+		max = Must(strconv.Atoi(u.Uid))
+	}
+
+	return prng.Intn(max), prng.Intn(max)
+}
+
+func FileUidGid(path string) (uid, gid int, err error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+
+	if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+		uid = int(stat.Uid)
+		gid = int(stat.Gid)
+	} else {
+		err = fmt.Errorf("unable to cast to Stat_t")
+	}
+
+	return
+}
+
+func FileMode(path string) (os.FileMode, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return fi.Mode(), nil
+}
+
+func RandomMode() os.FileMode {
+	mode := os.FileMode(prng.Intn(0777 + 1))
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSetuid
+	}
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSetgid
+	}
+	if prng.Intn(2) == 1 {
+		mode |= os.ModeSticky
+	}
+	return mode
+}
+
+func GetUmask() os.FileMode {
+	mask := syscall.Umask(0)
+	syscall.Umask(mask)
+	return os.FileMode(mask)
+}
+
+func TestTarballNotExist(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	tmp := t.TempDir()
+	noent := filepath.Join(tmp, "noent")
+
+	_, err := Open(ctx, noent)
+	if !IsNotExist(err) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestTarballRoundtripOneFileAtRoot(t *testing.T) {
 	ctx := testinglogging.SetupLogger(context.TODO(), t)
 
@@ -101,7 +165,7 @@ func TestTarballRoundtripOneFileAtRoot(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -114,7 +178,7 @@ func TestTarballRoundtripOneFileAtRoot(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
 	}
 
 	CheckFile(t, filepath.Join(b, "foo"), bs)
@@ -137,7 +201,7 @@ func TestTarballRoundtripEmptyDirectory(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -150,17 +214,17 @@ func TestTarballRoundtripEmptyDirectory(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
 	}
 
 	p := filepath.Join(b, "dir")
 	fi, err := os.Stat(p)
 	if err != nil {
-		t.Fatalf("unable to stat; %s: %v", p, err)
+		t.Errorf("unable to stat; %s: %v", p, err)
 	}
 
 	if !fi.IsDir() {
-		t.Fatalf("not a directory: %s", p)
+		t.Errorf("not a directory: %s", p)
 	}
 }
 
@@ -182,7 +246,7 @@ func TestTarballRoundtripDirectoryNoRecurse(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -196,7 +260,7 @@ func TestTarballRoundtripDirectoryNoRecurse(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
 	}
 
 	CheckFile(t, filepath.Join(b, "dir", "foo"), bs)
@@ -219,7 +283,7 @@ func TestTarballRoundtripNonEmptyDirectory(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -232,17 +296,17 @@ func TestTarballRoundtripNonEmptyDirectory(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
 	}
 
 	p := filepath.Join(b, "dir")
 	fi, err := os.Stat(p)
 	if err != nil {
-		t.Fatalf("unable to stat; %s: %v", p, err)
+		t.Errorf("unable to stat; %s: %v", p, err)
 	}
 
 	if !fi.IsDir() {
-		t.Fatalf("not a directory: %s", p)
+		t.Errorf("not a directory: %s", p)
 	}
 }
 
@@ -262,7 +326,7 @@ func TestTarballFailForMissingFilesWhenCreating(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); !os.IsNotExist(err) {
-		t.Fatalf("unexpected error: %v", err)
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -284,7 +348,7 @@ func TestTarballIgnoreMissingFilesWhenCreating(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 }
 
@@ -300,7 +364,7 @@ func TestTarballFailForMissingFilesWhenExtracting(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -314,7 +378,7 @@ func TestTarballFailForMissingFilesWhenExtracting(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err == nil {
-		t.Fatalf("unexpected success")
+		t.Errorf("unexpected success")
 	}
 }
 
@@ -330,7 +394,7 @@ func TestTarballIgnoreMissingFilesWhenExtracting(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -344,7 +408,7 @@ func TestTarballIgnoreMissingFilesWhenExtracting(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unexpected failure: %v", err)
+		t.Errorf("unexpected failure: %v", err)
 	}
 }
 
@@ -365,7 +429,7 @@ func TestTarballOverwriteFile(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -379,7 +443,7 @@ func TestTarballOverwriteFile(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
 	}
 
 	CheckFile(t, foo, bs0)
@@ -402,7 +466,7 @@ func TestTarballExistingDir(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := m0.Create(ctx, &buf); err != nil {
-		t.Fatalf("unable to create tarball: %v", err)
+		t.Errorf("unable to create tarball: %v", err)
 	}
 
 	b := filepath.Join(tmp, "b")
@@ -416,6 +480,163 @@ func TestTarballExistingDir(t *testing.T) {
 	}
 
 	if err := m1.Extract(ctx, &buf); err != nil {
-		t.Fatalf("unable to extract tarball: %v", err)
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+}
+
+func TestTarballUidAndGid(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	foo := filepath.Join(a, "foo")
+	_ = PopulateFile(t, foo)
+
+	uid0, gid0 := RandomUidGid()
+	if err := os.Chown(foo, uid0, gid0); err != nil {
+		t.Skipf("unable to chown(%s, %d, %d): %v", foo, uid0, gid0, err)
+	}
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Errorf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+
+	path := filepath.Join(b, "foo")
+	uid1, gid1, err := FileUidGid(path)
+	if err != nil {
+		t.Errorf("unable to stat file: %s", path)
+	}
+
+	if uid0 != uid1 {
+		t.Errorf("uid mismatch; %s: %d != %d", path, uid0, uid1)
+	}
+
+	if gid0 != gid1 {
+		t.Errorf("gid mismatch; %s: %d != %d", path, gid0, gid1)
+	}
+}
+
+func TestTarballModeFile(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	foo := filepath.Join(a, "foo")
+	_ = PopulateFile(t, foo)
+
+	mode0 := RandomMode()
+	mode0 |= 0400 // of course the file needs to be readable to create tarball
+	if err := os.Chmod(foo, mode0); err != nil {
+		t.Skipf("unable to chmod(%s, %#o): %v", foo, mode0, err)
+	}
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Errorf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"foo",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+
+	path := filepath.Join(b, "foo")
+	mode1, err := FileMode(path)
+	if err != nil {
+		t.Errorf("unable to stat file: %s", path)
+	}
+
+	//masked := mode0 & ^GetUmask()
+	masked := mode0
+
+	if masked != mode1 {
+		t.Errorf("mode mismatch; %s: %#o != %#o", path, masked, mode1)
+	}
+}
+
+func TestTarballModeDir(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	Must0(os.Mkdir(a, 0755))
+
+	dir := filepath.Join(a, "dir")
+	mode0 := RandomMode() | os.ModeDir
+	mode0 &= ^os.ModeSetuid
+	mode0 &= ^os.ModeSetgid
+	oldmask := syscall.Umask(0)
+	Must0(os.Mkdir(dir, mode0))
+	syscall.Umask(oldmask)
+
+	m0 := &manifest.Manifest {
+		Root: a,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Errorf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &manifest.Manifest {
+		Root: b,
+		Paths: []string{
+			"dir",
+		},
+	}
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+
+	path := filepath.Join(b, "dir")
+	mode1, err := FileMode(path)
+	if err != nil {
+		t.Errorf("unable to stat file: %s", path)
+	}
+
+	if mode0 != mode1 {
+		t.Errorf("mode mismatch; %s: %#o != %#o", path, mode0, mode1)
 	}
 }

@@ -1,4 +1,8 @@
+.git
 target
 go
 *.tar
 .image
+
+trace
+tmp

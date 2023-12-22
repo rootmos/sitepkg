@@ -8,6 +8,9 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
+	"os/user"
+	"strconv"
+	"syscall"
 
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
@@ -153,12 +156,15 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 
 	extract := func(hdr *tar.Header) (err error) {
 		path := m.Resolve(ctx, hdr.Name)
-		mode := os.FileMode(hdr.Mode)
-		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode)
+		fi := hdr.FileInfo()
+		mode := fi.Mode()
+		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode, "rawMode", hdr.Mode)
 
 		if hdr.Typeflag == tar.TypeDir {
 			logger.Info("mkdir")
+			oldmask := syscall.Umask(0)
 			err = os.Mkdir(path, mode)
+			syscall.Umask(oldmask)
 			if os.IsExist(err) {
 				err = nil
 			}
@@ -170,7 +176,9 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		}
 
 		logger.Debug("opening")
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(hdr.Mode))
+		oldmask := syscall.Umask(0)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+		syscall.Umask(oldmask)
 		if err != nil {
 			return err
 		}
@@ -186,7 +194,34 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		if err != nil {
 			return
 		}
-		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest())
+
+		uid := hdr.Uid
+		u, err := user.Lookup(hdr.Uname)
+		if err == nil {
+			if id, err := strconv.Atoi(u.Uid); err == nil {
+				uid = id
+			}
+		}
+
+		gid := hdr.Gid
+		g, err := user.LookupGroup(hdr.Uname)
+		if err == nil {
+			if id, err := strconv.Atoi(g.Gid); err == nil {
+				gid = id
+			}
+		}
+
+		err = os.Chown(path, uid, gid)
+		if err != nil {
+			return
+		}
+
+		err = os.Chmod(path, mode)
+		if err != nil {
+			return
+		}
+
+		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest(), "uid", uid, "gid", gid)
 
 		return
 	}
