@@ -628,3 +628,41 @@ func TestModeDir(t *testing.T) {
 		t.Errorf("mode mismatch; %s: %#o != %#o", path, mode0, mode1)
 	}
 }
+
+func TestRoundtripNonlocalFile(t *testing.T) {
+	ctx := testinglogging.SetupLogger(context.TODO(), t)
+
+	tmp := t.TempDir()
+	a := filepath.Join(tmp, "a")
+	foo := filepath.Join(tmp, "foo")
+	bs := PopulateFile(t, foo)
+
+	m0 := &Manifest {
+		Root: a,
+		Paths: []string{
+			foo,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := m0.Create(ctx, &buf); err != nil {
+		t.Errorf("unable to create tarball: %v", err)
+	}
+
+	b := filepath.Join(tmp, "b")
+	Must0(os.Mkdir(b, 0755))
+	m1 := &Manifest {
+		Root: b,
+		Paths: []string{
+			foo,
+		},
+	}
+
+	Must0(os.Remove(foo))
+
+	if err := m1.Extract(ctx, &buf); err != nil {
+		t.Errorf("unable to extract tarball: %v", err)
+	}
+
+	CheckFile(t, foo, bs)
+}
