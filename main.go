@@ -18,6 +18,7 @@ import (
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/internal/logging"
 	"rootmos.io/sitepkg/internal/manifest"
+	"rootmos.io/sitepkg/sealedbox"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -183,6 +184,11 @@ func main() {
 	tarballNotExistOkFlag := flag.Bool("tarball-not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
 
 	gzipFlag := flag.String("gzip", common.Getenv("GZIP"), "compress using gzip level")
+	keyfileFlag := flag.String("keyfile", common.Getenv("KEYFILE"), "encrypt/decrypt using the specified keyfile")
+	//keySecretsManagerARNFlag := flag.String("key-secretsmanager-arn",
+		//common.Getenv("KEY_SECRETSMANAGER_ARN"),
+		//"encrypt/decrypt using the specified key fetched from AWS SecretsManager by ARN",
+	//)
 
 	flag.Parse()
 
@@ -291,6 +297,38 @@ func main() {
 			logger.Debug("gzip", "level", gzipLevel, "original", n, "compressed", cmp.Len())
 
 			r = io.Reader(&cmp)
+		}
+
+		var key *sealedbox.Key
+		if *keyfileFlag != "" {
+			key, err := sealedbox.LoadKeyfile(*keyfileFlag)
+			if err != nil {
+				logger.Error("unable to load keyfile", "keyfile", *keyfileFlag, "err", err,)
+				os.Exit(1)
+			}
+			defer key.Close()
+		}
+
+		if key != nil {
+			var pt bytes.Buffer
+			if _, err := io.Copy(&pt, r); err != nil {
+				logger.Error("unable to encrypt tarball", "err", err)
+				os.Exit(1)
+			}
+
+			box, err := sealedbox.Seal(key, pt.Bytes())
+			if err != nil {
+				logger.Error("unable to encrypt tarball", "err", err)
+				os.Exit(1)
+			}
+
+			enc, err := box.MarshalBinary()
+			if err != nil {
+				logger.Error("unable to encrypt tarball", "err", err)
+				os.Exit(1)
+			}
+
+			r = bytes.NewReader(enc)
 		}
 
 		rh := common.ReaderSHA256(r)
