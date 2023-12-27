@@ -84,7 +84,7 @@ func LoadKeyfile(path string) (*Key, error) {
 	}
 
 	if len(bs) != KeySize {
-		return nil, fmt.Errorf("unusable keyfile (invalid size): %s")
+		return nil, fmt.Errorf("unusable keyfile (invalid size): %s", path)
 	}
 
 	key := mkkey()
