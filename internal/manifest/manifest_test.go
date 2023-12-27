@@ -42,10 +42,7 @@ func PopulateFile(t *testing.T, path string) (bs []byte) {
 	f := Must(os.Create(path))
 	defer f.Close()
 
-	seed := time.Now().UnixNano()
-	r := rand.New(rand.NewSource(seed))
-
-	n := r.Intn(4096)
+	n := prng.Intn(4096)
 
 	bs = make([]byte, n)
 
