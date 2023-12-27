@@ -30,10 +30,7 @@ type Key struct {
 }
 
 func (k *Key) Close() {
-	// TODO: there has to be a better way?
-	for i := 0; i < KeySize; i++ {
-		k.bs[i] = 0
-	}
+	clear(k.bs[:])
 }
 
 func mkkey() *Key {
@@ -84,6 +81,10 @@ func LoadKeyfile(path string) (*Key, error) {
 	bs, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(bs) != KeySize {
+		return nil, fmt.Errorf("unusable keyfile (invalid size): %s")
 	}
 
 	key := mkkey()

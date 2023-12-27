@@ -1,4 +1,7 @@
 target
 go
 *.tar
+*.tar.gz
+*.tar.gz.enc
 .image
+.keyfile

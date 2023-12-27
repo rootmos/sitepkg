@@ -265,8 +265,19 @@ func main() {
 			fmt.Fprintf(os.Stderr, "unable to parse as integer: %s (%v)", *gzipFlag, err)
 			os.Exit(2)
 		}
-	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".tgz") {
+	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".gz.enc") || strings.HasSuffix(tarball, ".tgz") || strings.HasSuffix(tarball, ".tgz.enc") {
 		gzipLevel = gzip.DefaultCompression
+	}
+
+	var key *sealedbox.Key
+	if *keyfileFlag != "" {
+		logger.Info("using keyfile", "keyfile", *keyfileFlag)
+		key, err = sealedbox.LoadKeyfile(*keyfileFlag)
+		if err != nil {
+			logger.Error("unable to load keyfile", "keyfile", *keyfileFlag, "err", err,)
+			os.Exit(1)
+		}
+		defer key.Close()
 	}
 
 	switch action {
@@ -299,24 +310,14 @@ func main() {
 			r = io.Reader(&cmp)
 		}
 
-		var key *sealedbox.Key
-		if *keyfileFlag != "" {
-			key, err := sealedbox.LoadKeyfile(*keyfileFlag)
-			if err != nil {
-				logger.Error("unable to load keyfile", "keyfile", *keyfileFlag, "err", err,)
-				os.Exit(1)
-			}
-			defer key.Close()
-		}
-
 		if key != nil {
-			var pt bytes.Buffer
-			if _, err := io.Copy(&pt, r); err != nil {
-				logger.Error("unable to encrypt tarball", "err", err)
+			pt, err := io.ReadAll(r)
+			if err != nil {
+				logger.Error("unable to read tarball", "err", err)
 				os.Exit(1)
 			}
 
-			box, err := sealedbox.Seal(key, pt.Bytes())
+			box, err := sealedbox.Seal(key, pt)
 			if err != nil {
 				logger.Error("unable to encrypt tarball", "err", err)
 				os.Exit(1)
@@ -324,9 +325,11 @@ func main() {
 
 			enc, err := box.MarshalBinary()
 			if err != nil {
-				logger.Error("unable to encrypt tarball", "err", err)
+				logger.Error("unable to marshal tarball", "err", err)
 				os.Exit(1)
 			}
+
+			logger.Debug("encrypted")
 
 			r = bytes.NewReader(enc)
 		}
@@ -354,6 +357,31 @@ func main() {
 
 		rh := common.ReaderSHA256(f)
 		r := io.Reader(rh)
+
+		if key != nil {
+			bs, err := io.ReadAll(r)
+			if err != nil {
+				logger.Error("unable to read tarball", "err", err)
+				os.Exit(1)
+			}
+
+			var box sealedbox.Box
+			if err := box.UnmarshalBinary(bs); err != nil {
+				logger.Error("unable to unmarshal box", "err", err)
+				os.Exit(1)
+			}
+
+			pt, err := box.Open(key)
+			if err := box.UnmarshalBinary(bs); err != nil {
+				logger.Error("unable to decrypt box", "err", err)
+				os.Exit(1)
+			}
+
+			logger.Debug("decrypted")
+
+			r = bytes.NewReader(pt)
+		}
+
 		if gzipLevel != gzip.NoCompression {
 			g, err := gzip.NewReader(r)
 			if err != nil {
