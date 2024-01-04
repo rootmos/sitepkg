@@ -29,6 +29,10 @@ type Key struct {
 	bs [KeySize]byte
 }
 
+func (k *Key) Bytes() []byte {
+	return k.bs[:]
+}
+
 func (k *Key) Close() {
 	clear(k.bs[:])
 }

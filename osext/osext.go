@@ -24,7 +24,7 @@ import (
 
 var s3Client *s3.Client
 
-func S3(ctx context.Context) (*s3.Client, error) {
+func getS3(ctx context.Context) (*s3.Client, error) {
 	if s3Client != nil {
 		return s3Client, nil
 	}
@@ -56,7 +56,7 @@ func Create(ctx context.Context, rawUrl string, r io.Reader) error {
 
 	switch u.Scheme {
 	case "s3":
-		s3c, err := S3(ctx)
+		s3c, err := getS3(ctx)
 		if err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func Open(ctx context.Context, rawUrl string) (io.ReadCloser, error) {
 
 	switch u.Scheme {
 	case "s3":
-		s3c, err := S3(ctx)
+		s3c, err := getS3(ctx)
 		if err != nil {
 			return nil, err
 		}
