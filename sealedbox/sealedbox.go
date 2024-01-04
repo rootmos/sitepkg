@@ -5,7 +5,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +37,21 @@ func (k *Key) Bytes() []byte {
 
 func (k *Key) Close() {
 	clear(k.bs[:])
+}
+
+func (k *Key) Fingerprint() string {
+	fpr := sha256.Sum256(k.bs[:])
+	return hex.EncodeToString(fpr[:7])
+}
+
+func KeyFromBytes(data []byte) (k *Key, err error) {
+	if len(data) != KeySize {
+		return nil, fmt.Errorf("unable to unmarshal key from binary; unexpected length: %d != %d", len(data), KeySize)
+	}
+	k = mkkey()
+	k.bs = [KeySize]byte(bytes.Clone(data))
+	print(k.Fingerprint())
+	return k, nil
 }
 
 func mkkey() *Key {

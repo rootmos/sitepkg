@@ -32,11 +32,13 @@ func main() {
 	tarballNotExistOkFlag := flag.Bool("tarball-not-exist-ok", common.GetenvBool("NOT_EXIST_OK"), "fail gracefully if tarball does not exist")
 
 	gzipFlag := flag.String("gzip", common.Getenv("GZIP"), "compress using gzip level")
+
 	keyfileFlag := flag.String("keyfile", common.Getenv("KEYFILE"), "encrypt/decrypt using the specified keyfile")
-	//keySecretsManagerARNFlag := flag.String("key-secretsmanager-arn",
-		//common.Getenv("KEY_SECRETSMANAGER_ARN"),
-		//"encrypt/decrypt using the specified key fetched from AWS SecretsManager by ARN",
-	//)
+	awsSecretsmanagerSecretArnFlag := flag.String(
+		"aws-secretsmanager-secret-arn",
+		common.Getenv("AWS_SECRETSMANAGER_SECRET_ARN"),
+		"encrypt/decrypt using the key fetched from AWS Secrets Manager Secret specified by its ARN",
+	)
 
 	flag.Parse()
 
@@ -118,14 +120,30 @@ func main() {
 	}
 
 	var key *sealedbox.Key
-	if *keyfileFlag != "" {
-		logger.Info("using keyfile", "keyfile", *keyfileFlag)
-		key, err = sealedbox.LoadKeyfile(*keyfileFlag)
-		if err != nil {
-			logger.Error("unable to load keyfile", "keyfile", *keyfileFlag, "err", err,)
-			os.Exit(1)
+	if *keyfileFlag != "" || *awsSecretsmanagerSecretArnFlag != "" {
+		if *keyfileFlag != "" && *awsSecretsmanagerSecretArnFlag != "" {
+			fmt.Fprint(os.Stderr, "both keyfile and AWS Secrets Manager Secret specified")
+			os.Exit(2)
 		}
-		defer key.Close()
+
+		if *keyfileFlag != "" {
+			path := *keyfileFlag
+			logger.Info("using keyfile", "keyfile", path)
+			key, err = sealedbox.LoadKeyfile(path)
+			if err != nil {
+				logger.Error("unable to load keyfile", "keyfile", path, "err", err,)
+				os.Exit(1)
+			}
+			defer key.Close()
+		}
+
+		if *awsSecretsmanagerSecretArnFlag != "" {
+			key, err = getKeyFromSMSecretValue(ctx, *awsSecretsmanagerSecretArnFlag)
+			if err != nil {
+				os.Exit(1)
+			}
+			defer key.Close()
+		}
 	}
 
 	switch action {
@@ -220,7 +238,7 @@ func main() {
 			}
 
 			pt, err := box.Open(key)
-			if err := box.UnmarshalBinary(bs); err != nil {
+			if err != nil {
 				logger.Error("unable to decrypt box", "err", err)
 				os.Exit(1)
 			}

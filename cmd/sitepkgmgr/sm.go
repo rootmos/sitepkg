@@ -78,6 +78,9 @@ func doNewSMSecretValue(ctx context.Context, arn string, force bool) error {
 	}
 	defer key.Close()
 
+	logger = logger.With("fpr", key.Fingerprint())
+	logger.Info("generated new key")
+
 	psv, err := sm.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput {
 		SecretId: aws.String(arn),
 		SecretBinary: key.Bytes(),

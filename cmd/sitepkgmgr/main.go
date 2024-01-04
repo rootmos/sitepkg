@@ -20,7 +20,7 @@ func doNewKeyfile(ctx context.Context, path string, force bool) error {
 	}
 	defer key.Close()
 
-	logger.Info("created new keyfile", "path", path)
+	logger.Info("created new keyfile", "path", path, "fpr", key.Fingerprint())
 	return nil
 }
 

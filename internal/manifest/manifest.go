@@ -152,7 +152,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		path := m.Resolve(ctx, hdr.Name)
 		fi := hdr.FileInfo()
 		mode := fi.Mode()
-		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode, "rawMode", hdr.Mode)
+		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode)
 
 		if hdr.Typeflag == tar.TypeDir {
 			logger.Info("mkdir")
