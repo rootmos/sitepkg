@@ -6,7 +6,7 @@ GO ?= go
 export GOPATH ?= $(abspath ./go)
 
 build: FORCE
-	$(GO) build -v -o $(abspath $(TARGET))/ .
+	$(GO) build -v -o $(abspath $(TARGET))/ ./...
 
 run: build
 	$(TARGET)/$(EXE)

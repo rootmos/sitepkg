@@ -54,21 +54,25 @@ func NewKey() (*Key, error) {
 	return key, nil
 }
 
-func NewKeyfile(path string) (key *Key, err error) {
-	key, err = NewKey()
+func NewKeyfile(path string) (*Key, error) {
+	key, err := NewKey()
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return
+		key.Close()
+		return nil, err
 	}
 	defer f.Close()
 
-	_, err = f.Write(key.bs[:])
+	if _, err = f.Write(key.bs[:]); err != nil {
+		key.Close()
+		return nil, err
+	}
 
-	return
+	return key, nil
 }
 
 func LoadKeyfile(path string) (*Key, error) {
