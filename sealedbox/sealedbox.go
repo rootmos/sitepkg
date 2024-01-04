@@ -58,13 +58,17 @@ func NewKey() (*Key, error) {
 	return key, nil
 }
 
-func NewKeyfile(path string) (*Key, error) {
+func NewKeyfile(path string, truncate bool) (*Key, error) {
 	key, err := NewKey()
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	flags := os.O_WRONLY|os.O_CREATE
+	if !truncate {
+		flags |= os.O_EXCL
+	}
+	f, err := os.OpenFile(path, flags, 0600)
 	if err != nil {
 		key.Close()
 		return nil, err

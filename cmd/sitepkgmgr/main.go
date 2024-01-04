@@ -10,11 +10,11 @@ import (
 	"rootmos.io/sitepkg/sealedbox"
 )
 
-func doNewKeyfile(ctx context.Context, path string) error {
+func doNewKeyfile(ctx context.Context, path string, force bool) error {
 	logger, ctx := logging.WithAttrs(ctx, "path", path)
 
 	logger.Debug("creating new keyfile")
-	key, err := sealedbox.NewKeyfile(path)
+	key, err := sealedbox.NewKeyfile(path, force)
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func main() {
 	ctx := logging.Set(context.Background(), logger)
 
 	if *newKeyfile != "" {
-		if err := doNewKeyfile(ctx, *newKeyfile); err != nil {
+		if err := doNewKeyfile(ctx, *newKeyfile, *force); err != nil {
 			log.Fatal(err)
 		}
 	}
