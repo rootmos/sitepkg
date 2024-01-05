@@ -12,7 +12,9 @@ package logging
 import (
 	"log/slog"
 	"context"
+	"fmt"
 )
+
 EOF
 	exit 0
 fi
@@ -25,10 +27,18 @@ cat <<EOF >>"$OUTPUT"
 const Level$LEVEL = Level($VALUE)
 
 func (l *Logger) $LEVEL(msg string, args ...any) {
-	l.inner.Log(nil, slog.Level(Level$LEVEL), msg, args...)
+	l.log(nil, Level$LEVEL, msg, args...)
 }
 
 func (l *Logger) ${LEVEL}Context(ctx context.Context, msg string, args ...any) {
-	l.inner.Log(ctx, slog.Level(Level$LEVEL), msg, args...)
+	l.log(ctx, Level$LEVEL, msg, args...)
+}
+
+func (l *Logger) ${LEVEL}f(format string, args ...any) {
+	l.log(nil, Level$LEVEL, fmt.Sprintf(format, args...))
+}
+
+func (l *Logger) ${LEVEL}fContext(ctx context.Context, format string, args ...any) {
+	l.log(ctx, Level$LEVEL, fmt.Sprintf(format, args...))
 }
 EOF

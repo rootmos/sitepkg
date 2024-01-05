@@ -52,6 +52,8 @@ func main() {
 
 	ctx := logging.Set(context.Background(), logger)
 
+	logger.Tracef("foo: %d", 7)
+
 	root := *chrootFlag
 	if root == "" {
 		root, err = os.Getwd()

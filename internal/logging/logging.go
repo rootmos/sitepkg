@@ -7,6 +7,8 @@ import (
 	"context"
 	"io"
 	"strings"
+	"runtime"
+	"time"
 )
 
 const Key = "logger"
@@ -115,4 +117,30 @@ func (c *Config) SetupDefaultLogger() (*Logger, error) {
 
 	slog.SetDefault(logger.inner)
 	return logger, nil
+}
+
+func (l *Logger) log(ctx context.Context, lvl Level, msg string, args... any) {
+	slvl := slog.Level(lvl)
+	if !l.inner.Enabled(ctx, slvl) {
+		return
+	}
+
+	var pcs [1]uintptr
+	runtime.Callers(3, pcs[:])
+	pc := pcs[0] - 1
+
+	r := slog.NewRecord(time.Now(), slvl, msg, pc)
+	r.Add(args...)
+
+	caller := runtime.FuncForPC(pc)
+	if caller != nil {
+		file, line := caller.FileLine(pc)
+		r.Add(slog.Group("caller",
+			"name", caller.Name(),
+			"file", file,
+			"line", line),
+		)
+	}
+
+	_ = l.inner.Handler().Handle(ctx, r)
 }
