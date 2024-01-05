@@ -40,9 +40,11 @@ func main() {
 		"encrypt/decrypt using the key fetched from AWS Secrets Manager Secret specified by its ARN",
 	)
 
+	logConfig := logging.PrepareConfig(common.EnvPrefix)
+
 	flag.Parse()
 
-	logger, err := logging.SetupDefaultLogger()
+	logger, err := logConfig.SetupDefaultLogger()
 	if err != nil {
 		log.Fatal(err)
 	}

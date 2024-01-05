@@ -28,7 +28,7 @@ func (m *Manifest) Resolve(ctx context.Context, p string) string {
 	q := p
 	if filepath.IsLocal(p) {
 		q = filepath.Join(m.Root, p)
-		logger.Debug("resolved relative path", "rel", p, "abs", q)
+		logger.DebugContext(ctx, "resolved relative path", "rel", p, "abs", q)
 	}
 
 	return q
@@ -65,7 +65,7 @@ func Load(ctx context.Context, path, root string) (m *Manifest, err error) {
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		p := s.Text()
-		logger.Debug("adding path to manifest", "path", p)
+		logger.DebugContext(ctx, "adding path to manifest", "path", p)
 		m.Paths = append(m.Paths, p)
 	}
 	if err = s.Err(); err != nil {
@@ -89,7 +89,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 
 		fi, err := os.Stat(path)
 		if os.IsNotExist(err) && m.IgnoreMissing {
-			logger.Info("ignoring missing")
+			logger.InfoContext(ctx, "ignoring missing")
 			return nil
 		}
 		if err != nil {
@@ -106,7 +106,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 		}
 
 		if fi.IsDir() {
-			logger.Info("add dir")
+			logger.InfoContext(ctx, "add dir")
 			return nil
 		}
 
@@ -130,7 +130,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 		if err != nil {
 			return err
 		}
-		logger.Info("add file", "bytes", n, "SHA256", rh.HexDigest())
+		logger.InfoContext(ctx, "add file", "bytes", n, "SHA256", rh.HexDigest())
 
 		return
 	}
@@ -155,7 +155,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		logger, _ := logging.WithAttrs(ctx, "name", hdr.Name, "path", path, "mode", mode)
 
 		if hdr.Typeflag == tar.TypeDir {
-			logger.Info("mkdir")
+			logger.InfoContext(ctx, "mkdir")
 			oldmask := syscall.Umask(0)
 			err = os.Mkdir(path, mode)
 			syscall.Umask(oldmask)
@@ -169,7 +169,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 			return fmt.Errorf("non-regular files not supported: %s", hdr.Name)
 		}
 
-		logger.Debug("opening")
+		logger.DebugContext(ctx, "opening")
 		oldmask := syscall.Umask(0)
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 		syscall.Umask(oldmask)
@@ -182,7 +182,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 			}
 		}()
 
-		logger.Debug("writing")
+		logger.DebugContext(ctx, "writing")
 		rh := common.ReaderSHA256(tr)
 		n, err := io.Copy(f, rh)
 		if err != nil {
@@ -215,7 +215,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 			return
 		}
 
-		logger.Info("extracted file", "bytes", n, "SHA256", rh.HexDigest(), "uid", uid, "gid", gid)
+		logger.InfoContext(ctx, "extracted file", "bytes", n, "SHA256", rh.HexDigest(), "uid", uid, "gid", gid)
 
 		return
 	}
@@ -232,7 +232,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		}
 
 		if !m.Has(hdr.Name) {
-			logger.Debug("skipping", "name", hdr.Name)
+			logger.DebugContext(ctx, "skipping", "name", hdr.Name)
 			continue
 		}
 
@@ -246,7 +246,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 	for _, p := range m.Paths {
 		if !extracted[p] {
 			if m.IgnoreMissing {
-				logger.Info("missing", "name", p)
+				logger.InfoContext(ctx, "missing", "name", p)
 			} else {
 				return fmt.Errorf("not found in tarball: %s", p)
 			}

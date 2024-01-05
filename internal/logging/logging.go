@@ -6,75 +6,113 @@ import (
 	"os"
 	"context"
 	"io"
-
-	"rootmos.io/sitepkg/internal/common"
+	"strings"
 )
 
-var (
-	LogLevelFlag = flag.String("log-level", common.Getenv("LOG_LEVEL"), "set logging level")
-	JsonLoggingFlag = flag.Bool("log-json", common.GetenvBool("LOG_JSON"), "log JSON objects (instead of plain-text)")
-	Level = new(slog.LevelVar)
-	Key = "logging"
-)
+const Key = "logger"
 
-func ParseLogLevelFlag() (err error) {
-	if LogLevelFlag != nil && *LogLevelFlag != "" {
-		var lvl slog.Level
-		err = lvl.UnmarshalText([]byte(*LogLevelFlag))
-		if err == nil {
-			Level.Set(lvl)
-		}
-	}
-	return
+type Logger struct {
+	inner *slog.Logger
 }
 
-func SetupLogger(w io.Writer) (*slog.Logger, error) {
-	if err := ParseLogLevelFlag(); err != nil {
-		return nil, err
-	}
-	if w == nil {
-		w = os.Stderr
-	}
-	opts := slog.HandlerOptions{ Level: Level }
-
-	var logger *slog.Logger
-	if JsonLoggingFlag != nil && *JsonLoggingFlag {
-		logger = slog.New(slog.NewJSONHandler(w, &opts))
-	} else {
-		logger = slog.New(slog.NewTextHandler(w, &opts))
-	}
-
-	return logger, nil
+func (l *Logger) With(args ...any) *Logger {
+	return &Logger { inner: l.inner.With(args...) }
 }
 
-func SetupDefaultLogger() (*slog.Logger, error) {
-	logger, err := SetupLogger(nil)
-	if err == nil {
-		slog.SetDefault(logger)
-	}
-	return logger, err
-}
-
-func Set(ctx context.Context, logger *slog.Logger) context.Context {
+func Set(ctx context.Context, logger *Logger) context.Context {
 	return context.WithValue(ctx, Key, logger)
 }
 
-func Get(ctx context.Context) *slog.Logger {
-	return ctx.Value(Key).(*slog.Logger)
+func Get(ctx context.Context) *Logger {
+	switch v := ctx.Value(Key).(type) {
+	case *Logger:
+		return v
+	case *slog.Logger:
+		return &Logger { inner: v }
+	default:
+		return &Logger { inner: slog.Default() }
+
+	}
 }
 
-type F func(*slog.Logger) *slog.Logger
-
-func With(ctx context.Context, fs ...func(*slog.Logger) *slog.Logger) (*slog.Logger, context.Context) {
-	logger := Get(ctx)
-	for _, f := range fs {
-		logger = f(logger)
-	}
+func WithAttrs(ctx context.Context, args ...any) (*Logger, context.Context) {
+	logger := Get(ctx).With(args...)
 	return logger, Set(ctx, logger)
 }
 
-func WithAttrs(ctx context.Context, args ...any) (*slog.Logger, context.Context) {
-	return With(ctx, func(l *slog.Logger) *slog.Logger {
-		return l.With(args...)
-	})
+type Level slog.Level
+
+//go:generate ./generate_level.sh levels.go
+//go:generate ./generate_level.sh levels.go Trace slog.Level(-8)
+//go:generate ./generate_level.sh levels.go Debug slog.LevelDebug
+//go:generate ./generate_level.sh levels.go Info slog.LevelInfo
+//go:generate ./generate_level.sh levels.go Warn slog.LevelWarn
+//go:generate ./generate_level.sh levels.go Error slog.LevelError
+
+func parseLogLevel(s string) (Level, error) {
+	switch strings.ToUpper(s) {
+	case "TRACE":
+		return LevelTrace, nil
+	}
+
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(s)); err != nil {
+		return 0, err
+	}
+
+	return Level(l), nil
+}
+
+type Config struct {
+	logLevelRaw *string
+	DefaultLevel Level
+}
+
+func PrepareConfig(envPrefix string) Config {
+	getenv := func(key string) string {
+		return os.Getenv(envPrefix + key)
+	}
+	return Config {
+		logLevelRaw: flag.String("log-level", getenv("LOG_LEVEL"), "set logging level"),
+	}
+}
+
+func (c *Config) SetupLogger(w io.Writer) (l *Logger, err error) {
+	level := c.DefaultLevel
+	if c.logLevelRaw != nil && *c.logLevelRaw != "" {
+		if level, err = parseLogLevel(*c.logLevelRaw); err != nil {
+			return nil, err
+		}
+	}
+
+	if w == nil {
+		w = os.Stderr
+	}
+
+	opts := slog.HandlerOptions {
+		Level: slog.Level(level),
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.LevelKey {
+				level := a.Value.Any().(slog.Level)
+				if level == slog.Level(LevelTrace) {
+					a.Value = slog.StringValue("TRACE")
+				}
+			}
+			return a
+		},
+	}
+
+	inner := slog.New(slog.NewTextHandler(w, &opts))
+
+	return &Logger{ inner: inner }, nil
+}
+
+func (c *Config) SetupDefaultLogger() (*Logger, error) {
+	logger, err := c.SetupLogger(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.SetDefault(logger.inner)
+	return logger, nil
 }
