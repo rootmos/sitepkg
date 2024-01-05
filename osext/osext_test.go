@@ -5,11 +5,11 @@ import (
 	"context"
 	"path/filepath"
 
-	testinglogging "rootmos.io/sitepkg/internal/logging/testing"
+	logging "rootmos.io/sitepkg/internal/logging/testing"
 )
 
 func TestTarballNotExist(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 	tmp := t.TempDir()
 	noent := filepath.Join(tmp, "noent")
 

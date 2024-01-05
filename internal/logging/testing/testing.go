@@ -9,7 +9,7 @@ import (
 	"rootmos.io/sitepkg/internal/logging"
 )
 
-func SetupLogger(ctx context.Context, t *testing.T) context.Context {
+func SetupTestLogger(ctx context.Context, t *testing.T) context.Context {
 	r, w := io.Pipe()
 	ch := make(chan struct{})
 
@@ -29,7 +29,8 @@ func SetupLogger(ctx context.Context, t *testing.T) context.Context {
 		<- ch
 	})
 
-	logger, err := logging.SetupLogger(w)
+	logConfig := logging.Config{}
+	logger, err := logConfig.SetupLogger(w)
 	if err != nil {
 		t.Fatalf("unable to setup logger: %v", err)
 	}
