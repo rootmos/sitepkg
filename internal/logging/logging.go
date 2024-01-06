@@ -66,8 +66,15 @@ func parseLogLevel(s string) (Level, error) {
 }
 
 type Config struct {
-	logLevelRaw *string
-	DefaultLevel Level
+	HumanWriter io.Writer
+	humanLogLevelRaw *string
+	HumanLevel Level
+
+	JsonWriter io.Writer
+	jsonLogLevelRaw *string
+	JsonLevel Level
+
+	Handlers []slog.Handler
 }
 
 func PrepareConfig(envPrefix string) Config {
@@ -75,34 +82,71 @@ func PrepareConfig(envPrefix string) Config {
 		return os.Getenv(envPrefix + key)
 	}
 	return Config {
-		logLevelRaw: flag.String("log-level", getenv("LOG_LEVEL"), "set logging level"),
+		HumanWriter: os.Stderr,
+		humanLogLevelRaw: flag.String("log-level", getenv("LOG_LEVEL"), "set logging level"),
+		HumanLevel: LevelInfo,
+
+		jsonLogLevelRaw: flag.String("json-log-level", getenv("JSON_LOG_LEVEL"), "set JSON logging level"),
+		JsonLevel: LevelInfo,
 	}
 }
 
-func (c *Config) SetupLogger(w io.Writer) (l *Logger, err error) {
-	level := c.DefaultLevel
-	if c.logLevelRaw != nil && *c.logLevelRaw != "" {
-		if level, err = parseLogLevel(*c.logLevelRaw); err != nil {
-			return nil, err
+func (c *Config) SetupLogger() (l *Logger, err error) {
+	hs := c.Handlers
+	if c.HumanWriter != nil {
+		level := c.HumanLevel
+		if c.humanLogLevelRaw != nil && *c.humanLogLevelRaw != "" {
+			if level, err = parseLogLevel(*c.humanLogLevelRaw); err != nil {
+				return nil, err
+			}
 		}
+
+		hs = append(hs, &HumanHandler {
+			w: c.HumanWriter,
+			level: level,
+		})
 	}
 
-	if w == nil {
-		w = os.Stderr
+	if c.JsonWriter != nil {
+		level := c.JsonLevel
+		if c.jsonLogLevelRaw != nil && *c.jsonLogLevelRaw != "" {
+			if level, err = parseLogLevel(*c.jsonLogLevelRaw); err != nil {
+				return nil, err
+			}
+		}
+
+		opts := slog.HandlerOptions {
+			Level: slog.Level(level),
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.LevelKey {
+					level := a.Value.Any().(slog.Level)
+					if level == slog.Level(LevelTrace) {
+						a.Value = slog.StringValue("TRACE")
+					}
+				}
+				return a
+			},
+		}
+
+		hs = append(hs, slog.NewJSONHandler(c.JsonWriter, &opts))
 	}
 
-	h := HumanHandler {
-		w: w,
-		level: level,
+	var inner *slog.Logger
+	switch len(hs) {
+	case 0:
+		inner = slog.Default() // TODO: or use a NullHandler?
+	case 1:
+		inner = slog.New(hs[0])
+	default:
+		mh := MultiHandler(hs)
+		inner = slog.New(&mh)
 	}
-
-	inner := slog.New(&h)
 
 	return &Logger{ inner: inner }, nil
 }
 
 func (c *Config) SetupDefaultLogger() (*Logger, error) {
-	logger, err := c.SetupLogger(nil)
+	logger, err := c.SetupLogger()
 	if err != nil {
 		return nil, err
 	}
@@ -138,5 +182,3 @@ func (l *Logger) log(ctx context.Context, lvl Level, msg string, args... any) {
 
 	_ = l.inner.Handler().Handle(ctx, r)
 }
-
-type MultiHandler []slog.Handler

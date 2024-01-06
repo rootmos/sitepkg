@@ -29,8 +29,10 @@ func SetupTestLogger(ctx context.Context, t *testing.T) context.Context {
 		<- ch
 	})
 
-	logConfig := logging.Config{}
-	logger, err := logConfig.SetupLogger(w)
+	logConfig := logging.Config{
+		HumanWriter: w,
+	}
+	logger, err := logConfig.SetupLogger()
 	if err != nil {
 		t.Fatalf("unable to setup logger: %v", err)
 	}
