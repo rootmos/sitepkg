@@ -44,10 +44,11 @@ func main() {
 
 	flag.Parse()
 
-	logger, err := logConfig.SetupDefaultLogger()
+	logger, closer, err := logConfig.SetupDefaultLogger()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer closer()
 	logger.Debug("hello")
 
 	ctx := logging.Set(context.Background(), logger)

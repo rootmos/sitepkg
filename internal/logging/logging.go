@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -33,7 +34,6 @@ func Get(ctx context.Context) *Logger {
 		return &Logger { inner: v }
 	default:
 		return &Logger { inner: slog.Default() }
-
 	}
 }
 
@@ -67,37 +67,65 @@ func parseLogLevel(s string) (Level, error) {
 
 type Config struct {
 	HumanWriter io.Writer
-	humanLogLevelRaw *string
+	humanLevelFlag *string
 	HumanLevel Level
+	humanFileFlag *string
+	humanCloser io.Closer
 
 	JsonWriter io.Writer
-	jsonLogLevelRaw *string
+	jsonLevelFlag *string
 	JsonLevel Level
+	jsonFileFlag *string
+	jsonCloser io.Closer
 
 	Handlers []slog.Handler
 }
 
 func PrepareConfig(envPrefix string) Config {
-	getenv := func(key string) string {
-		return os.Getenv(envPrefix + key)
+	getenv := func(key, def string) string {
+		value, ok := os.LookupEnv(envPrefix + key)
+		if ok {
+			return value
+		} else {
+			return def
+		}
 	}
 	return Config {
-		HumanWriter: os.Stderr,
-		humanLogLevelRaw: flag.String("log-level", getenv("LOG_LEVEL"), "set logging level"),
-		HumanLevel: LevelInfo,
+		humanLevelFlag: flag.String("log-level", getenv("LOG_LEVEL", "INFO"), "set log level"),
+		humanFileFlag: flag.String("log-file", getenv("LOG_FILE", "/dev/stderr"), "log to file"),
 
-		jsonLogLevelRaw: flag.String("json-log-level", getenv("JSON_LOG_LEVEL"), "set JSON logging level"),
-		JsonLevel: LevelInfo,
+		jsonLevelFlag: flag.String("json-log-level", getenv("JSON_LOG_LEVEL", "INFO"), "set JSON log level"),
+		jsonFileFlag: flag.String("json-log-file", getenv("JSON_LOG_FILE", "/dev/null"), "log JSON to file"),
 	}
 }
 
-func (c *Config) SetupLogger() (l *Logger, err error) {
+func (c *Config) SetupLogger() (l *Logger, closer func() error, err error) {
 	hs := c.Handlers
+
+	var cs []io.Closer
+
+	if c.HumanWriter == nil && c.humanFileFlag != nil && *c.humanFileFlag != "" {
+		switch *c.humanFileFlag {
+		case "/dev/null":
+		case "/dev/stdout", "-":
+			c.HumanWriter = os.Stdout
+		case "/dev/stderr":
+			c.HumanWriter = os.Stderr
+		default:
+			f, err := os.OpenFile(*c.humanFileFlag, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return nil, nil, err
+			}
+			c.HumanWriter = f
+			cs = append(cs, f)
+		}
+	}
 	if c.HumanWriter != nil {
 		level := c.HumanLevel
-		if c.humanLogLevelRaw != nil && *c.humanLogLevelRaw != "" {
-			if level, err = parseLogLevel(*c.humanLogLevelRaw); err != nil {
-				return nil, err
+		if c.humanLevelFlag != nil && *c.humanLevelFlag != "" {
+			if level, err = parseLogLevel(*c.humanLevelFlag); err != nil {
+				mkCloser(cs)()
+				return nil, nil, err
 			}
 		}
 
@@ -107,11 +135,29 @@ func (c *Config) SetupLogger() (l *Logger, err error) {
 		})
 	}
 
+	if c.JsonWriter == nil && c.jsonFileFlag != nil && *c.jsonFileFlag != "" {
+		switch *c.jsonFileFlag {
+		case "/dev/null":
+		case "/dev/stdout", "-":
+			c.JsonWriter = os.Stdout
+		case "/dev/stderr":
+			c.JsonWriter = os.Stderr
+		default:
+			f, err := os.OpenFile(*c.jsonFileFlag, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				mkCloser(cs)()
+				return nil, nil, err
+			}
+			c.JsonWriter = f
+			cs = append(cs, f)
+		}
+	}
 	if c.JsonWriter != nil {
 		level := c.JsonLevel
-		if c.jsonLogLevelRaw != nil && *c.jsonLogLevelRaw != "" {
-			if level, err = parseLogLevel(*c.jsonLogLevelRaw); err != nil {
-				return nil, err
+		if c.jsonLevelFlag != nil && *c.jsonLevelFlag != "" {
+			if level, err = parseLogLevel(*c.jsonLevelFlag); err != nil {
+				mkCloser(cs)()
+				return nil, nil, err
 			}
 		}
 
@@ -142,17 +188,34 @@ func (c *Config) SetupLogger() (l *Logger, err error) {
 		inner = slog.New(&mh)
 	}
 
-	return &Logger{ inner: inner }, nil
+	return &Logger{ inner: inner }, mkCloser(cs), nil
 }
 
-func (c *Config) SetupDefaultLogger() (*Logger, error) {
-	logger, err := c.SetupLogger()
+func (c *Config) SetupDefaultLogger() (*Logger, func() error, error) {
+	logger, closer, err := c.SetupLogger()
 	if err != nil {
-		return nil, err
+		closer()
+		return nil, nil, err
 	}
 
 	slog.SetDefault(logger.inner)
-	return logger, nil
+	return logger, closer, nil
+}
+
+func mkCloser(cs []io.Closer) (func() error) {
+	return func() error {
+		var es []error
+		for _, c := range cs {
+			if err := c.Close(); err != nil {
+				es = append(es, err)
+			}
+		}
+		if len(es) > 0 {
+			return fmt.Errorf("multiple errors while closing: %v", es)
+		} else {
+			return nil
+		}
+	}
 }
 
 func (l *Logger) log(ctx context.Context, lvl Level, msg string, args... any) {
