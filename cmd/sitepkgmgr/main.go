@@ -5,9 +5,9 @@ import (
 	"flag"
 	"context"
 
-	"rootmos.io/sitepkg/internal/logging"
+	"rootmos.io/go-utils/logging"
+	"rootmos.io/go-utils/sealedbox"
 	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/sealedbox"
 )
 
 func doNewKeyfile(ctx context.Context, path string, force bool) error {
@@ -28,12 +28,14 @@ func main() {
 	newKeyfile := flag.String("new-keyfile", common.Getenv("NEW_KEYFILE"), "create new keyfile")
 	newAwsSecretsManagerSecretValue := flag.String("new-aws-secretsmanager-secret-value", common.Getenv("NEW_AWS_SECRETSMANAGER_SECRET_VALUE_ARN"), "populate the secret value of the AWS Secrets Manager Secret specified by its ARN")
 	force := flag.Bool("force", common.GetenvBool("FORCE"), "overwrite key if exists")
+	logConfig := logging.PrepareConfig(common.EnvPrefix)
 	flag.Parse()
 
-	logger, err := logging.SetupDefaultLogger()
+	logger, closer, err := logConfig.SetupDefaultLogger()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer closer()
 	logger.Debug("hello")
 
 	ctx := logging.Set(context.Background(), logger)

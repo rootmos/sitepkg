@@ -8,6 +8,9 @@ export GOPATH ?= $(abspath ./go)
 build: FORCE
 	$(GO) build -v -o $(abspath $(TARGET))/ ./...
 
+generate: FORCE
+	$(GO) generate ./...
+
 run: build
 	$(TARGET)/$(EXE)
 

@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"fmt"
 
-	testinglogging "rootmos.io/sitepkg/internal/logging/testing"
+	logging "rootmos.io/go-utils/logging/testing"
 )
 
 var seed = time.Now().UnixNano()
@@ -134,7 +134,7 @@ func GetUmask() os.FileMode {
 }
 
 func TestRoundtripOneFileAtRoot(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -170,7 +170,7 @@ func TestRoundtripOneFileAtRoot(t *testing.T) {
 }
 
 func TestRoundtripEmptyDirectory(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -214,7 +214,7 @@ func TestRoundtripEmptyDirectory(t *testing.T) {
 }
 
 func TestRoundtripDirectoryNoRecurse(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -252,7 +252,7 @@ func TestRoundtripDirectoryNoRecurse(t *testing.T) {
 }
 
 func TestRoundtripNonEmptyDirectory(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -296,7 +296,7 @@ func TestRoundtripNonEmptyDirectory(t *testing.T) {
 }
 
 func TestFailForMissingFilesWhenCreating(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -316,7 +316,7 @@ func TestFailForMissingFilesWhenCreating(t *testing.T) {
 }
 
 func TestIgnoreMissingFilesWhenCreating(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -338,7 +338,7 @@ func TestIgnoreMissingFilesWhenCreating(t *testing.T) {
 }
 
 func TestFailForMissingFilesWhenExtracting(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -368,7 +368,7 @@ func TestFailForMissingFilesWhenExtracting(t *testing.T) {
 }
 
 func TestIgnoreMissingFilesWhenExtracting(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -398,7 +398,7 @@ func TestIgnoreMissingFilesWhenExtracting(t *testing.T) {
 }
 
 func TestOverwriteFile(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -435,7 +435,7 @@ func TestOverwriteFile(t *testing.T) {
 }
 
 func TestExistingDir(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -470,7 +470,7 @@ func TestExistingDir(t *testing.T) {
 }
 
 func TestUidAndGid(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -523,7 +523,7 @@ func TestUidAndGid(t *testing.T) {
 }
 
 func TestModeFile(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -576,7 +576,7 @@ func TestModeFile(t *testing.T) {
 }
 
 func TestModeDir(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
@@ -627,7 +627,7 @@ func TestModeDir(t *testing.T) {
 }
 
 func TestRoundtripNonlocalFile(t *testing.T) {
-	ctx := testinglogging.SetupLogger(context.TODO(), t)
+	ctx := logging.SetupTestLogger(context.TODO(), t)
 
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")

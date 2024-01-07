@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"rootmos.io/sitepkg/internal/logging"
-	"rootmos.io/sitepkg/sealedbox"
+	"rootmos.io/go-utils/logging"
+	"rootmos.io/go-utils/sealedbox"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"

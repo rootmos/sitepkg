@@ -13,11 +13,12 @@ import (
 	"compress/gzip"
 	"strconv"
 
+	"rootmos.io/go-utils/hashed"
+	"rootmos.io/go-utils/logging"
+	"rootmos.io/go-utils/osext"
+	"rootmos.io/go-utils/sealedbox"
 	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/internal/logging"
 	"rootmos.io/sitepkg/internal/manifest"
-	"rootmos.io/sitepkg/sealedbox"
-	"rootmos.io/sitepkg/osext"
 )
 
 func main() {
@@ -40,15 +41,20 @@ func main() {
 		"encrypt/decrypt using the key fetched from AWS Secrets Manager Secret specified by its ARN",
 	)
 
+	logConfig := logging.PrepareConfig(common.EnvPrefix)
+
 	flag.Parse()
 
-	logger, err := logging.SetupDefaultLogger()
+	logger, closer, err := logConfig.SetupDefaultLogger()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer closer()
 	logger.Debug("hello")
 
 	ctx := logging.Set(context.Background(), logger)
+
+	logger.Tracef("foo: %d", 7)
 
 	root := *chrootFlag
 	if root == "" {
@@ -200,7 +206,7 @@ func main() {
 			r = bytes.NewReader(enc)
 		}
 
-		rh := common.ReaderSHA256(r)
+		rh := hashed.ReaderSHA256(r)
 
 		if err := osext.Create(ctx, tarball, rh); err != nil {
 			logger.Error("unable to write tarball", "err", err)
@@ -221,7 +227,7 @@ func main() {
 		}
 		defer f.Close()
 
-		rh := common.ReaderSHA256(f)
+		rh := hashed.ReaderSHA256(f)
 		r := io.Reader(rh)
 
 		if key != nil {

@@ -50,7 +50,6 @@ func KeyFromBytes(data []byte) (k *Key, err error) {
 	}
 	k = mkkey()
 	k.bs = [KeySize]byte(bytes.Clone(data))
-	print(k.Fingerprint())
 	return k, nil
 }
 
