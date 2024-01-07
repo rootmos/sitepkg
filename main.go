@@ -18,7 +18,7 @@ import (
 	"rootmos.io/go-utils/osext"
 	"rootmos.io/go-utils/sealedbox"
 	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/internal/manifest"
+	"rootmos.io/sitepkg/manifest"
 )
 
 func main() {
