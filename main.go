@@ -13,11 +13,12 @@ import (
 	"compress/gzip"
 	"strconv"
 
+	"rootmos.io/go-utils/hashed"
+	"rootmos.io/go-utils/logging"
+	"rootmos.io/go-utils/osext"
+	"rootmos.io/go-utils/sealedbox"
 	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/internal/logging"
 	"rootmos.io/sitepkg/internal/manifest"
-	"rootmos.io/sitepkg/sealedbox"
-	"rootmos.io/sitepkg/osext"
 )
 
 func main() {
@@ -205,7 +206,7 @@ func main() {
 			r = bytes.NewReader(enc)
 		}
 
-		rh := common.ReaderSHA256(r)
+		rh := hashed.ReaderSHA256(r)
 
 		if err := osext.Create(ctx, tarball, rh); err != nil {
 			logger.Error("unable to write tarball", "err", err)
@@ -226,7 +227,7 @@ func main() {
 		}
 		defer f.Close()
 
-		rh := common.ReaderSHA256(f)
+		rh := hashed.ReaderSHA256(f)
 		r := io.Reader(rh)
 
 		if key != nil {

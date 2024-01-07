@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"syscall"
 
-	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/internal/logging"
+	"rootmos.io/go-utils/hashed"
+	"rootmos.io/go-utils/logging"
 )
 
 type Manifest struct {
@@ -125,7 +125,7 @@ func (m *Manifest) Create(ctx context.Context, w io.Writer) (err error) {
 			}
 		}()
 
-		rh := common.ReaderSHA256(f)
+		rh := hashed.ReaderSHA256(f)
 		n, err := io.Copy(tw, rh)
 		if err != nil {
 			return err
@@ -183,7 +183,7 @@ func (m *Manifest) Extract(ctx context.Context, r io.Reader) error {
 		}()
 
 		logger.DebugContext(ctx, "writing")
-		rh := common.ReaderSHA256(tr)
+		rh := hashed.ReaderSHA256(tr)
 		n, err := io.Copy(f, rh)
 		if err != nil {
 			return

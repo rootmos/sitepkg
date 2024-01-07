@@ -5,9 +5,9 @@ import (
 	"flag"
 	"context"
 
-	"rootmos.io/sitepkg/internal/logging"
+	"rootmos.io/go-utils/logging"
+	"rootmos.io/go-utils/sealedbox"
 	"rootmos.io/sitepkg/internal/common"
-	"rootmos.io/sitepkg/sealedbox"
 )
 
 func doNewKeyfile(ctx context.Context, path string, force bool) error {

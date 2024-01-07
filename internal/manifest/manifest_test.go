@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"fmt"
 
-	logging "rootmos.io/sitepkg/internal/logging/testing"
+	logging "rootmos.io/go-utils/logging/testing"
 )
 
 var seed = time.Now().UnixNano()
