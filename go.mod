@@ -5,10 +5,10 @@ go 1.21.5
 require (
 	github.com/aws/aws-sdk-go-v2 v1.24.1
 	github.com/aws/aws-sdk-go-v2/config v1.26.3
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.26.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.26.1
 	rootmos.io/go-utils/hashed v0.1.0
-	rootmos.io/go-utils/logging v0.1.0
-	rootmos.io/go-utils/osext v0.1.0
+	rootmos.io/go-utils/logging v0.2.1
+	rootmos.io/go-utils/osext v0.1.2
 	rootmos.io/go-utils/sealedbox v0.1.0
 )
 

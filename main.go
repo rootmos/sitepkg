@@ -9,17 +9,149 @@ import (
 	"io"
 	"bytes"
 	"strings"
-	"fmt"
 	"compress/gzip"
 	"strconv"
+	"fmt"
 
 	"rootmos.io/go-utils/hashed"
 	"rootmos.io/go-utils/logging"
 	"rootmos.io/go-utils/osext"
 	"rootmos.io/go-utils/sealedbox"
+
 	"rootmos.io/sitepkg/internal/common"
 	"rootmos.io/sitepkg/manifest"
 )
+
+
+type state struct {
+	tarball string
+	m *manifest.Manifest
+	key *sealedbox.Key
+	gzipLevel int
+	tarballNotExistOk bool
+}
+
+func (st *state) create(ctx context.Context) error {
+	logger := logging.Get(ctx)
+
+	var buf bytes.Buffer
+	if err := st.m.Create(ctx, &buf); err != nil {
+		return err
+	}
+
+	r := io.Reader(&buf)
+	if st.gzipLevel != gzip.NoCompression {
+		var cmp bytes.Buffer
+		w, err := gzip.NewWriterLevel(&cmp, st.gzipLevel)
+		if err != nil {
+			return fmt.Errorf("unable to initialize gzip: %s", err)
+		}
+
+		n, err := io.Copy(w, r)
+		if err != nil {
+			return fmt.Errorf("unable to write gzip: %s", err)
+		}
+
+		w.Close()
+
+		logger.Debug("gzip", "level", st.gzipLevel, "original", n, "compressed", cmp.Len())
+
+		r = io.Reader(&cmp)
+	}
+
+	if st.key != nil {
+		pt, err := io.ReadAll(r)
+		if err != nil {
+			return fmt.Errorf("unable to read tarball: %v", err)
+		}
+
+		box, err := sealedbox.Seal(st.key, pt)
+		if err != nil {
+			return fmt.Errorf("unable to encrypt tarball: %v", err)
+		}
+
+		enc, err := box.MarshalBinary()
+		if err != nil {
+			return fmt.Errorf("unable to marshal tarball: %v", err)
+		}
+
+		logger.Debug("encrypted")
+
+		r = bytes.NewReader(enc)
+	}
+
+	rh := hashed.ReaderSHA256(r)
+
+	if err := osext.Create(ctx, st.tarball, rh); err != nil {
+		return fmt.Errorf("unable to write tarball: %v", err)
+	}
+
+	logger.Info("created", "SHA256", rh.HexDigest())
+
+	return nil
+}
+
+func (st *state) extract(ctx context.Context) error {
+	logger := logging.Get(ctx)
+
+	logger.Info("extracting")
+	f, err := osext.Open(ctx, st.tarball)
+	if osext.IsNotExist(err) && st.tarballNotExistOk {
+		logger.Info("failing gracefully: tarball does not exist", "tarball", st.tarball)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("unable to open tarball: %v", err)
+	}
+	defer f.Close()
+
+	rh := hashed.ReaderSHA256(f)
+	r := io.Reader(rh)
+
+	if st.key != nil {
+		bs, err := io.ReadAll(r)
+		if err != nil {
+			return fmt.Errorf("unable to read tarball: %s", err)
+		}
+
+		var box sealedbox.Box
+		if err := box.UnmarshalBinary(bs); err != nil {
+			return fmt.Errorf("unable to unmarshal box: %s", err)
+		}
+
+		pt, err := box.Open(st.key)
+		if err != nil {
+			return fmt.Errorf("unable to decrypt box: %s", err)
+		}
+
+		logger.Debug("decrypted")
+
+		r = bytes.NewReader(pt)
+	}
+
+	if st.gzipLevel != gzip.NoCompression {
+		g, err := gzip.NewReader(r)
+		if err != nil {
+			return fmt.Errorf("unable to initialize gzip: %s", err)
+		}
+		defer g.Close()
+		r = g
+	}
+
+	if err := st.m.Extract(ctx, r); err != nil {
+		return fmt.Errorf("unable to extract tarball: %s", err)
+	}
+
+	logger.Info("extracted", "SHA256", rh.HexDigest())
+	return nil
+}
+
+func filenameSuggestCompression(path string) bool {
+	return (strings.HasSuffix(path, ".gz") ||
+		strings.HasSuffix(path, ".gz.enc") ||
+		strings.HasSuffix(path, ".tgz") ||
+		strings.HasSuffix(path, ".tgz.enc"))
+}
 
 func main() {
 	chrootFlag := flag.String("chroot", common.Getenv("CHROOT"), "act relative directory")
@@ -54,7 +186,9 @@ func main() {
 
 	ctx := logging.Set(context.Background(), logger)
 
-	logger.Tracef("foo: %d", 7)
+	st := state {
+		tarballNotExistOk: *tarballNotExistOkFlag,
+	}
 
 	root := *chrootFlag
 	if root == "" {
@@ -71,20 +205,19 @@ func main() {
 		logger.Info("root", "path", root)
 	}
 
-	var m *manifest.Manifest
 	if *manifestFlag == "" {
-		m = &manifest.Manifest{}
+		st.m = &manifest.Manifest{}
 	} else {
-		m, err = manifest.Load(ctx, *manifestFlag, root)
+		path := *manifestFlag
+		st.m, err = manifest.Load(ctx, path, root)
 		if err != nil {
-			logger.Error("unable to load manifest", "manifest", *manifestFlag, "err", err)
-			os.Exit(1)
+			logger.With("err", err).ExitfContext(ctx, 1, "unable to load manifest: %s", path)
 		}
 	}
-	m.IgnoreMissing = *ignoreMissingFlag
+	st.m.IgnoreMissing = *ignoreMissingFlag
 
 	for _, p := range flag.Args() {
-		m.Add(p)
+		st.m.Add(p)
 	}
 
 	const (
@@ -94,182 +227,67 @@ func main() {
 	)
 	action := ActionNoop
 
-	var tarball string
 	if *createFlag != "" {
 		if action != ActionNoop {
-			fmt.Fprint(os.Stderr, "more than one action specified")
-			os.Exit(2)
+			logger.ExitContext(ctx, 2, "more than one action specified")
 		}
 		action = ActionCreate
-		tarball = *createFlag
+		st.tarball = *createFlag
 	}
 	if *extractFlag != "" {
 		if action != ActionNoop {
-			fmt.Fprint(os.Stderr, "more than one action specified")
-			os.Exit(2)
+			logger.ExitContext(ctx, 2, "more than one action specified")
 		}
 		action = ActionExtract
-		tarball = *extractFlag
+		st.tarball = *extractFlag
 	}
 
-	logger, ctx = logging.WithAttrs(ctx, "tarball", tarball)
+	logger, ctx = logging.WithAttrs(ctx, "tarball", st.tarball)
 
-	gzipLevel := gzip.NoCompression
+	st.gzipLevel = gzip.NoCompression
 	if *gzipFlag != "" {
-		gzipLevel, err = strconv.Atoi(*gzipFlag)
+		st.gzipLevel, err = strconv.Atoi(*gzipFlag)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "unable to parse as integer: %s (%v)", *gzipFlag, err)
-			os.Exit(2)
+			logger.With("err", err).ExitfContext(ctx, 2, "unable to parse as integer: %s", *gzipFlag)
 		}
-	} else if strings.HasSuffix(tarball, ".gz") || strings.HasSuffix(tarball, ".gz.enc") || strings.HasSuffix(tarball, ".tgz") || strings.HasSuffix(tarball, ".tgz.enc") {
-		gzipLevel = gzip.DefaultCompression
+	} else if filenameSuggestCompression(st.tarball) {
+		st.gzipLevel = gzip.DefaultCompression
 	}
 
-	var key *sealedbox.Key
 	if *keyfileFlag != "" || *awsSecretsmanagerSecretArnFlag != "" {
 		if *keyfileFlag != "" && *awsSecretsmanagerSecretArnFlag != "" {
-			fmt.Fprint(os.Stderr, "both keyfile and AWS Secrets Manager Secret specified")
-			os.Exit(2)
+			logger.ExitContext(ctx, 2, "both keyfile and AWS Secrets Manager Secret specified")
 		}
 
 		if *keyfileFlag != "" {
 			path := *keyfileFlag
 			logger.Info("using keyfile", "keyfile", path)
-			key, err = sealedbox.LoadKeyfile(path)
+			st.key, err = sealedbox.LoadKeyfile(path)
 			if err != nil {
-				logger.Error("unable to load keyfile", "keyfile", path, "err", err,)
-				os.Exit(1)
+				logger.With("err", err).ExitfContext(ctx, 1, "unable to load keyfile: %s", path)
 			}
-			defer key.Close()
+			defer st.key.Close()
 		}
 
 		if *awsSecretsmanagerSecretArnFlag != "" {
-			key, err = getKeyFromSMSecretValue(ctx, *awsSecretsmanagerSecretArnFlag)
+			arn := *awsSecretsmanagerSecretArnFlag
+			st.key, err = getKeyFromSMSecretValue(ctx, arn)
 			if err != nil {
-				os.Exit(1)
+				logger.With("err", err).ExitfContext(ctx, 1, "unable to get key from Secrets Manager: %s", arn)
 			}
-			defer key.Close()
+			defer st.key.Close()
 		}
 	}
 
 	switch action {
 	case ActionCreate:
-		var buf bytes.Buffer
-		if err := m.Create(ctx, &buf); err != nil {
-			logger.Error("unable to create tarball", "err", err)
-			os.Exit(1)
+		if err := st.create(ctx); err != nil {
+			logger.Exit(1, "unable to create tarball: %v", err)
 		}
-
-		r := io.Reader(&buf)
-		if gzipLevel != gzip.NoCompression {
-			var cmp bytes.Buffer
-			w, err := gzip.NewWriterLevel(&cmp, gzipLevel)
-			if err != nil {
-				logger.Error("unable to initialize gzip", "err", err)
-				os.Exit(1)
-			}
-
-			n, err := io.Copy(w, r)
-			if err != nil {
-				logger.Error("unable to write gzip", "err", err)
-				os.Exit(1)
-			}
-
-			w.Close()
-
-			logger.Debug("gzip", "level", gzipLevel, "original", n, "compressed", cmp.Len())
-
-			r = io.Reader(&cmp)
-		}
-
-		if key != nil {
-			pt, err := io.ReadAll(r)
-			if err != nil {
-				logger.Error("unable to read tarball", "err", err)
-				os.Exit(1)
-			}
-
-			box, err := sealedbox.Seal(key, pt)
-			if err != nil {
-				logger.Error("unable to encrypt tarball", "err", err)
-				os.Exit(1)
-			}
-
-			enc, err := box.MarshalBinary()
-			if err != nil {
-				logger.Error("unable to marshal tarball", "err", err)
-				os.Exit(1)
-			}
-
-			logger.Debug("encrypted")
-
-			r = bytes.NewReader(enc)
-		}
-
-		rh := hashed.ReaderSHA256(r)
-
-		if err := osext.Create(ctx, tarball, rh); err != nil {
-			logger.Error("unable to write tarball", "err", err)
-			os.Exit(1)
-		}
-
-		logger.Info("created", "SHA256", rh.HexDigest())
 	case ActionExtract:
-		logger.Info("extracting")
-		f, err := osext.Open(ctx, tarball)
-		if osext.IsNotExist(err) && *tarballNotExistOkFlag {
-			logger.Info("failing gracefully: does not exist", "tarball", tarball)
-			break
+		if err := st.extract(ctx); err != nil {
+			logger.Exit(1, "unable to extract tarball: %v", err)
 		}
-		if err != nil {
-			logger.Error("unable to open tarball", "err", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-
-		rh := hashed.ReaderSHA256(f)
-		r := io.Reader(rh)
-
-		if key != nil {
-			bs, err := io.ReadAll(r)
-			if err != nil {
-				logger.Error("unable to read tarball", "err", err)
-				os.Exit(1)
-			}
-
-			var box sealedbox.Box
-			if err := box.UnmarshalBinary(bs); err != nil {
-				logger.Error("unable to unmarshal box", "err", err)
-				os.Exit(1)
-			}
-
-			pt, err := box.Open(key)
-			if err != nil {
-				logger.Error("unable to decrypt box", "err", err)
-				os.Exit(1)
-			}
-
-			logger.Debug("decrypted")
-
-			r = bytes.NewReader(pt)
-		}
-
-		if gzipLevel != gzip.NoCompression {
-			g, err := gzip.NewReader(r)
-			if err != nil {
-				logger.Error("unable to initialize gzip", "err", err)
-				os.Exit(1)
-			}
-			defer g.Close()
-			r = g
-		}
-
-		if err := m.Extract(ctx, r); err != nil {
-			logger.Error("unable to extract tarball", "err", err)
-			os.Exit(1)
-		}
-
-		logger.Info("extracted", "SHA256", rh.HexDigest())
 	case ActionNoop:
 		logger.Info("noop")
 	}
